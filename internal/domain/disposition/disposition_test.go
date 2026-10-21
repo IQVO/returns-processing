@@ -237,6 +237,27 @@ func TestPolicyValidationBounds(t *testing.T) {
 	}
 }
 
+// The invariant: the policy bounds are inclusive at the floor — a zero-day
+// window (same-day returns) and a single-unit cap are both declarable.
+func TestPolicyAcceptsFloorBoundaries(t *testing.T) {
+	zeroWindow, err := Declare(PolicyInput{Version: 1, ReturnWindowDays: 0,
+		MaxUnitsPerLine: 10, Rules: fullRules(), DeclaredAt: declaredAt})
+	if err != nil {
+		t.Fatalf("Declare with a zero-day window = %v, want accepted", err)
+	}
+	if !zeroWindow.WindowEndsFrom(declaredAt).Equal(declaredAt) {
+		t.Fatalf("zero-day window end = %v, want %v", zeroWindow.WindowEndsFrom(declaredAt), declaredAt)
+	}
+	oneCap, err := Declare(PolicyInput{Version: 1, ReturnWindowDays: 30,
+		MaxUnitsPerLine: 1, Rules: fullRules(), DeclaredAt: declaredAt})
+	if err != nil {
+		t.Fatalf("Declare with a one-unit cap = %v, want accepted", err)
+	}
+	if oneCap.MaxUnitsPerLine() != 1 {
+		t.Fatalf("cap = %d, want 1", oneCap.MaxUnitsPerLine())
+	}
+}
+
 // The table is validated on declare: total (a "*" default per grade), no
 // duplicates, valid grades, outcomes and classes.
 func TestPolicyValidationRules(t *testing.T) {

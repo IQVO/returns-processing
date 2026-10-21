@@ -140,11 +140,15 @@ jobs:
 
   # Fast, BLOCKING mutation subset: runs on every push/PR so a drop in test
   # quality (tests that execute but stop asserting) is caught immediately.
-  # Subset = ./internal/domain/disposition, the StockUnit aggregate: the richest
-  # behavioural core in the domain (15 of the 41 domain mutants) and it
-  # completes in ~1 minute. Thresholds/workers/timeout come from .gremlins.yaml,
-  # so this job, the scheduled `mutation` job below and `make mutation` all
-  # agree. The exhaustive run stays in the `mutation` job.
+  # Subset = every package under ./internal/domain (disposition, the richest
+  # aggregate with the Decide table and guardrails; returnauthorization and
+  # returnreceipt, the two state machines; shared, the work-unit formula),
+  # each mutated on its own, the same list as the Makefile's
+  # MUTATION_FAST_PKGS. A new domain package MUST be added to the loop below
+  # and to that variable.
+  # Thresholds/workers/timeout come from .gremlins.yaml, so this job, the
+  # scheduled `mutation` job below and `make mutation` all agree. The
+  # exhaustive run stays in the `mutation` job.
   # ============================================================
   # CLASSIFICATION: TEST QUALITY (MUTATION TESTING, fast subset)
   # ============================================================
@@ -158,8 +162,14 @@ jobs:
           go-version-file: go.mod
       - name: Install gremlins
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
-      - name: Mutation testing (fast subset — disposition aggregate)
-        run: gremlins unleash ./internal/domain/disposition
+      - name: Mutation testing (fast subset — every domain package)
+        run: |
+          set -euo pipefail
+          for pkg in returnauthorization returnreceipt disposition shared; do
+            echo "::group::gremlins unleash ./internal/domain/$pkg"
+            gremlins unleash "./internal/domain/$pkg"
+            echo "::endgroup::"
+          done
 
   mutation:
     runs-on: ubuntu-latest

@@ -172,7 +172,7 @@ func (r OrderLineRef) WorkUnit() string {
 // 1-based integer line number after it.
 func ParseWorkUnit(s string) (OrderLineRef, error) {
 	idx := strings.LastIndex(s, WorkUnitSep)
-	if idx < 0 {
+	if idx == -1 {
 		return OrderLineRef{}, ErrInvalidWorkUnit
 	}
 	orderPart, linePart := s[:idx], s[idx+len(WorkUnitSep):]

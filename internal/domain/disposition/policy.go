@@ -106,11 +106,9 @@ func (p *DispositionPolicy) ruleFor(g shared.Grade, class string) (Outcome, bool
 
 // validateRules refuses an unknown grade, an invalid outcome, a duplicate
 // (grade, productClass) pair and a table that is not total (some grade with
-// a specific rule but no "*" default, or no rules at all).
+// a specific rule but no "*" default, or no rules at all — an empty table
+// fails the totality loop below with the same error).
 func validateRules(rules []Rule) error {
-	if len(rules) < 1 {
-		return ErrPolicyNotTotal
-	}
 	seen := make(map[string]bool, len(rules))
 	for _, r := range rules {
 		if !r.Grade.Valid() {
