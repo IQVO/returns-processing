@@ -42,8 +42,8 @@ func (r *Dispositions) Save(ctx context.Context, d *disposition.Disposition) err
 		SET staged = EXCLUDED.staged
 		WHERE dispositions.version = 0
 	`, s.ID, s.ReceiptID, s.LineNo, s.SKU, s.Quantity, string(s.Grade), string(s.Outcome),
-		s.PolicyVersion, nullString(s.Supersedes), nullString(s.Reason), s.SiteID,
-		nullString(s.RMAID), s.ReceivedAt.UTC(), s.DecidedAt.UTC(), s.Staged, s.Version)
+		s.PolicyVersion, nullString(s.Supersedes), s.Reason, s.SiteID,
+		s.RMAID, s.ReceivedAt.UTC(), s.DecidedAt.UTC(), s.Staged, s.Version)
 	if err != nil {
 		return dispositionSaveError(err)
 	}

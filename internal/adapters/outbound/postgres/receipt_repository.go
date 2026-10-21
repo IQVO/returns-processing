@@ -41,7 +41,7 @@ func (r *Receipts) Save(ctx context.Context, rc *returnreceipt.Receipt) error {
 			SET rma_id = EXCLUDED.rma_id, site_id = EXCLUDED.site_id,
 			    opened_at = EXCLUDED.opened_at, version = EXCLUDED.version, updated_at = now()
 			WHERE return_receipts.version = $6
-		`, s.ID, nullString(s.RMAID), s.SiteID, s.OpenedAt.UTC(), s.Version, s.Version-1)
+		`, s.ID, s.RMAID, s.SiteID, s.OpenedAt.UTC(), s.Version, s.Version-1)
 		if err != nil {
 			return fmt.Errorf("save receipt %s: %w", s.ID, err)
 		}
@@ -57,8 +57,8 @@ func (r *Receipts) Save(ctx context.Context, rc *returnreceipt.Receipt) error {
 					(receipt_id, line_no, sku, quantity, kind, rma_id, inspected,
 					 inspected_quantity, grade, reason_codes, inspected_at)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-			`, s.ID, l.LineNo, l.SKU, l.Quantity, string(l.Kind), nullString(l.RMAID),
-				l.Inspected, l.InspectedQuantity, nullString(string(l.Grade)),
+			`, s.ID, l.LineNo, l.SKU, l.Quantity, string(l.Kind), l.RMAID,
+				l.Inspected, l.InspectedQuantity, string(l.Grade),
 				reasonCodesJSON(l.ReasonCodes), nullTime(l.InspectedAt)); err != nil {
 				return fmt.Errorf("save line %d of receipt %s: %w", l.LineNo, s.ID, err)
 			}
@@ -147,6 +147,12 @@ func scanReceipt(row pgx.Row) (returnreceipt.Snapshot, error) {
 func unmarshalReasons(b []byte) []string {
 	var reasons []string
 	if err := json.Unmarshal(b, &reasons); err != nil {
+		return nil
+	}
+	if len(reasons) == 0 {
+		// an empty JSON array must read back as the zero value (nil), or a
+		// DeepEqual round-trip against a never-inspected line fails on
+		// nil-vs-empty — a stored nothing is a nothing.
 		return nil
 	}
 	return reasons

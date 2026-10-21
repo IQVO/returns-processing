@@ -76,7 +76,7 @@ func rmaSaveError(err error) error {
 func rmaArgs(s returnauthorization.Snapshot) []any {
 	return []any{
 		s.ID, s.OrderID, s.LineNo, s.SKU, s.Quantity, s.SiteID, s.ReasonCode,
-		string(s.Status), nullString(string(s.RejectionCode)),
+		string(s.Status), string(s.RejectionCode),
 		nullTime(s.WindowEndsAt), nullTime(s.DecidedAt),
 		nullTime(s.ReceivedAt), nullTime(s.ClosedAt),
 		s.Version, s.Version - 1,

@@ -54,11 +54,17 @@ func NewManifestedUnits() *ManifestedUnits {
 }
 
 // PutByOrderLine records the manifested work unit of the order line and
-// indexes it by its package id.
+// indexes it by its package id, mirroring the Postgres upsert: a
+// re-manifested line replaces the unit wholesale, so the package id it used
+// to carry stops resolving.
 func (m *ManifestedUnits) PutByOrderLine(orderID string, lineNo int32, unit views.ManifestedUnit) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.byOrderLine[lineKey(orderID, lineNo)] = unit
+	key := lineKey(orderID, lineNo)
+	if old, ok := m.byOrderLine[key]; ok && old.PackageID != "" && old.PackageID != unit.PackageID {
+		delete(m.byPackage, old.PackageID)
+	}
+	m.byOrderLine[key] = unit
 	if unit.PackageID != "" {
 		m.byPackage[unit.PackageID] = unit
 	}
@@ -91,10 +97,16 @@ func NewProductClasses() *ProductClasses {
 	return &ProductClasses{bySKU: map[string]views.ProductClass{}}
 }
 
-// Put records the SKU's classification copy.
+// Put records the SKU's classification copy, applying only a NEWER version —
+// the LOCAL COPY RULE of the contracts (ProductClassified carries a version;
+// a replayed old version must not overwrite a newer copy), the exact
+// predicate the Postgres upsert guards by.
 func (p *ProductClasses) Put(sku string, pc views.ProductClass) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if stored, ok := p.bySKU[sku]; ok && pc.Version <= stored.Version {
+		return
+	}
 	p.bySKU[sku] = pc
 }
 

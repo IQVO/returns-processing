@@ -36,17 +36,41 @@ func NewRMAs() *RMAs { return &RMAs{byID: map[string]*returnauthorization.RMA{}}
 // Save stores the latest copy of r. Like the Postgres adapter, Save is
 // guarded by the aggregate version: an rma whose version is not exactly the
 // stored version + 1 is a concurrent modification (a fresh insert has no
-// stored version and always lands).
+// stored version and always lands). The one-open-RMA rule (ADR 0002
+// invariant 1) is enforced exactly like the partial unique index: a second
+// open RMA for the same order line is ErrOpenRMAExists, whatever the id.
 func (r *RMAs) Save(_ context.Context, rma *returnauthorization.RMA) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if stored, ok := r.byID[rma.ID()]; ok && rma.Version() != stored.Version()+1 {
 		return ports.ErrConcurrentModification
 	}
+	if err := r.refuseOpenSibling(rma); err != nil {
+		return err
+	}
 	if _, ok := r.byID[rma.ID()]; !ok {
 		r.order = append(r.order, rma.ID())
 	}
 	r.byID[rma.ID()] = clone(rma)
+	return nil
+}
+
+// refuseOpenSibling is the in-memory stand-in of the
+// uq_rmas_one_open_per_order_line partial index: at most ONE open RMA per
+// (order, line), REQUESTED/AUTHORIZED/RECEIVED counting as open.
+func (r *RMAs) refuseOpenSibling(rma *returnauthorization.RMA) error {
+	if !rma.Open() {
+		return nil
+	}
+	for _, stored := range r.byID {
+		if stored.ID() == rma.ID() || !stored.Open() {
+			continue
+		}
+		line := stored.Line()
+		if line.OrderID().String() == rma.Line().OrderID().String() && line.LineNo() == rma.Line().LineNo() {
+			return returnauthorization.ErrOpenRMAExists
+		}
+	}
 	return nil
 }
 
@@ -150,15 +174,27 @@ func NewDispositions() *Dispositions {
 
 // Save stores the decision and marks it the line's latest. A disposition is
 // immutable at version 1, so re-saving an existing id is a concurrent
-// modification, exactly like the Postgres primary-key conflict.
+// modification, exactly like the Postgres primary-key conflict; and the
+// one-policy-decision-per-line rule is enforced exactly like the partial
+// unique index: a second NON-superseding decision for a line that already
+// has one is a concurrent modification (an override carries supersedes and
+// is exempt).
 func (r *Dispositions) Save(_ context.Context, d *disposition.Disposition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.byID[d.ID()]; ok {
 		return ports.ErrConcurrentModification
 	}
+	key := fmt.Sprintf("%s\x00%d", d.ReceiptID(), d.LineNo())
+	if d.Supersedes() == "" {
+		if prevID, ok := r.byLine[key]; ok {
+			if prev := r.byID[prevID]; prev != nil && prev.Supersedes() == "" {
+				return ports.ErrConcurrentModification
+			}
+		}
+	}
 	r.byID[d.ID()] = clone(d)
-	r.byLine[fmt.Sprintf("%s\x00%d", d.ReceiptID(), d.LineNo())] = d.ID()
+	r.byLine[key] = d.ID()
 	return nil
 }
 
