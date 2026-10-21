@@ -1,0 +1,38 @@
+# Local infrastructure for running the service by hand: the real Postgres
+# the service runs on plus the broker address documentation. NOT VERIFIED
+# END TO END as a compose stack in this step — the persistence proof is the
+# testcontainers integration suite (`make integration`); this file exists
+# for local runs and documents the fleet broker address as env only.
+#
+# The service reads (cmd wiring, a later step):
+#   DATABASE_URL           the pooler-facing DSN (PgBouncer in the cluster)
+#   MIGRATIONS_DATABASE_URL  direct session DSN for DDL; falls back to
+#                            DATABASE_URL (unit-tested in
+#                            internal/adapters/outbound/postgres/migrate_test.go)
+#   KAFKA_BROKERS          the fleet broker address, e.g. the cluster's
+#                          kafka.warehouse.svc:9092 — documented env only,
+#                          no Kafka container is started here
+# Consumer group ids come from the env names pinned in
+# .claude/rules/integration-events.md:
+#   PRODUCT_CLASSIFICATION_CONSUMER_GROUP
+#   ORDER_LINES_CONSUMER_GROUP
+#   MANIFEST_CONSUMER_GROUP
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: returns
+      POSTGRES_PASSWORD: returns
+      POSTGRES_DB: returns
+    ports:
+      - "5433:5432"
+    volumes:
+      - returns_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U returns -d returns"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  returns_postgres_data:
