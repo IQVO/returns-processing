@@ -24,6 +24,15 @@ import (
 // memory and Postgres alike.
 var ErrNotFound = errors.New("ports: not found")
 
+// ErrConcurrentModification is the typed optimistic-concurrency conflict
+// every repo Save can return: the stored row's version is not the version
+// the caller loaded (another writer got there first, or the caller is saving
+// stale state). The Postgres adapter raises it when the version-guarded
+// upsert affects 0 rows; the memory double mirrors the same rule so the
+// repocontract proves both adapters behave alike. The HTTP adapter maps it
+// to 409.
+var ErrConcurrentModification = errors.New("ports: concurrent modification")
+
 // ReturnAuthorizationRepo persists RMA aggregates by id and carries the
 // one-open-RMA-per-order-line invariant (ADR 0002). Inside a UnitOfWork it
 // joins the transaction carried in ctx. The Postgres adapter guards every

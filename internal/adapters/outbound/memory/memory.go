@@ -33,10 +33,16 @@ type RMAs struct {
 // NewRMAs returns an empty double.
 func NewRMAs() *RMAs { return &RMAs{byID: map[string]*returnauthorization.RMA{}} }
 
-// Save stores the latest copy of r.
+// Save stores the latest copy of r. Like the Postgres adapter, Save is
+// guarded by the aggregate version: an rma whose version is not exactly the
+// stored version + 1 is a concurrent modification (a fresh insert has no
+// stored version and always lands).
 func (r *RMAs) Save(_ context.Context, rma *returnauthorization.RMA) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if stored, ok := r.byID[rma.ID()]; ok && rma.Version() != stored.Version()+1 {
+		return ports.ErrConcurrentModification
+	}
 	if _, ok := r.byID[rma.ID()]; !ok {
 		r.order = append(r.order, rma.ID())
 	}
@@ -102,10 +108,14 @@ type Receipts struct {
 // NewReceipts returns an empty double.
 func NewReceipts() *Receipts { return &Receipts{byID: map[string]*returnreceipt.Receipt{}} }
 
-// Save stores the latest copy of r.
+// Save stores the latest copy of r, guarded by the aggregate version like
+// the Postgres adapter (a fresh insert always lands).
 func (r *Receipts) Save(_ context.Context, rc *returnreceipt.Receipt) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if stored, ok := r.byID[rc.ID()]; ok && rc.Version() != stored.Version()+1 {
+		return ports.ErrConcurrentModification
+	}
 	r.byID[rc.ID()] = clone(rc)
 	return nil
 }
@@ -138,10 +148,15 @@ func NewDispositions() *Dispositions {
 	}
 }
 
-// Save stores the decision and marks it the line's latest.
+// Save stores the decision and marks it the line's latest. A disposition is
+// immutable at version 1, so re-saving an existing id is a concurrent
+// modification, exactly like the Postgres primary-key conflict.
 func (r *Dispositions) Save(_ context.Context, d *disposition.Disposition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.byID[d.ID()]; ok {
+		return ports.ErrConcurrentModification
+	}
 	r.byID[d.ID()] = clone(d)
 	r.byLine[fmt.Sprintf("%s\x00%d", d.ReceiptID(), d.LineNo())] = d.ID()
 	return nil
@@ -180,7 +195,10 @@ type Policies struct {
 // NewPolicies returns an empty double.
 func NewPolicies() *Policies { return &Policies{byVer: map[int64]*disposition.DispositionPolicy{}} }
 
-// Save stores the version and marks it current.
+// Save stores the version and marks it current. A NEW version appends; a
+// re-declared version replaces its row (the use cases re-declare v1 when a
+// fixture resets the table), which the Postgres adapter mirrors with an
+// upsert on the version primary key.
 func (r *Policies) Save(_ context.Context, p *disposition.DispositionPolicy) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

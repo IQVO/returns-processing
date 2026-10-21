@@ -103,10 +103,12 @@ CREATE UNIQUE INDEX uq_dispositions_one_policy_decision_per_line
 -- FindByReceiptLine (the line's latest decision) and audit.
 CREATE INDEX idx_dispositions_by_line ON dispositions (receipt_id, line_no, decided_at DESC);
 
--- disposition_policies: the append-only DispositionPolicy versions (ADR 0002:
--- a change is a new version, never a rewrite). The version IS the primary
--- key. is_current marks the latest declared version (at most one); Save
--- clears the previous current and inserts the new one in one transaction.
+-- disposition_policies: the DispositionPolicy versions (ADR 0002: a change
+-- is a new version, never a rewrite of an old one). The version IS the
+-- primary key. is_current marks the latest declared version (at most one);
+-- Save clears the previous current and upserts the new one in one
+-- transaction (a re-declared version replaces its own row, the exact
+-- semantics the use cases rely on when a table is reset).
 CREATE TABLE disposition_policies (
     version            BIGINT      PRIMARY KEY CHECK (version >= 1),
     return_window_days INTEGER     NOT NULL CHECK (return_window_days >= 0),
