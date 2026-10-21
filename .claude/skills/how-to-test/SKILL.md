@@ -16,13 +16,16 @@ assert nothing.
 ## The four layers, in order of what they actually prove
 
 1. **Unit tests** (`go test ./...`) — prove the code runs without
-   panicking and returns SOMETHING. Table-driven, in-memory adapters only
-   (`internal/adapters/outbound/memory/`), never a real network/DB call.
+   panicking and returns SOMETHING. Table-driven, in-memory test doubles
+   for the ports only, never a real network/DB call (the shipped binary
+   must never link a memory adapter — the runtime fitness tests in
+   `internal/architecture/` enforce that).
 2. **Coverage** (`make coverage`, 90% gate on
    `./internal/domain/...,./internal/application/...`) — proves lines
    executed. Proves nothing about whether the test asserted the right
    thing.
-3. **Mutation testing** (`make mutation-fast`, gremlins) — proves the
+3. **Mutation testing** (`make mutation`, gremlins over every domain
+   package) — proves the
    tests actually ASSERT, not merely execute. A mutant is a deliberately
    broken version of the code (`<` -> `<=`, `+` -> `-`, etc.); if the test
    suite still passes against the mutant, it "survived" (LIVED) — meaning
@@ -103,11 +106,10 @@ testcontainers actually exercises the assertions on the runner. A fitness
 test per technology enforces it (`TestKafkaIntegrationTestsUseTestcontainers`,
 `TestPostgresIntegrationTestsUseTestcontainers`). Share one container per
 package through a helper (e.g. an `outboxDB(t)` that runs
-`tcpostgres.Run` -> `ConnectionString` -> migrate -> pool -> `t.Cleanup`). See
-`internal/adapters/outbound/facilitycache/consumer_integration_test.go`
-for the working recipe (unique topic per test, one shared container per
-package, explicit `CreateTopics` + poll for the partition leader before
-the first read/write).
+`tcpostgres.Run` -> `ConnectionString` -> migrate -> pool -> `t.Cleanup`),
+with a unique topic per test, one shared container per
+package, and explicit `CreateTopics` + a poll for the partition leader
+before the first read/write.
 
 ## Verify before opening the PR
 

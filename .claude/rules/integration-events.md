@@ -59,10 +59,12 @@ not a preference — there is nothing to "choose" here:
   the `content-type` header); a legacy-flat-message-rejected test per
   consumer; Kafka integration tests via testcontainers only.
 
-Full standard, subdomain table and the fleet's cross-service type
-catalogue: warehouse-docs `docs/strategic-design/event-standard-cloudevents.md`.
-Record it in this repo as its own ADR "CloudEvents 1.0 as the mandatory
-event envelope" under `docs/docs/adr/`.
+Full standard, subdomain table and the fleet's cross-service type catalogue:
+the CloudEvents event standard page in the warehouse-docs repository. This repo
+records its own copy of the envelope and the type catalogue as ADR 0004,
+`docs/adr/0004-cloudevents-envelope-and-type-catalogue.md`;
+`TestEventCatalogueMatchesContract` (`internal/architecture/catalogue_fitness_test.go`)
+fails when a type in `apis/asyncapi.yaml` has no line in that ADR.
 
 ### Published types
 

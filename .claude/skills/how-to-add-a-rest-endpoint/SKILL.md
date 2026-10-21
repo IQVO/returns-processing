@@ -12,10 +12,13 @@ this order — domain first, adapter last — never the reverse; writing the
 HTTP handler before the domain invariant it enforces produces handlers
 that validate nothing and use cases that get bypassed.
 
-This walks the exact path `POST /bins/{binId}/cycle-count` took
-(`internal/application/usecases/run_cycle_count.go` +
-`internal/adapters/inbound/http/server.go`'s `handleRunCycleCount`) as the
-concrete worked example — read those two files alongside this guide.
+This walks the exact path `POST /returns` will take as the concrete
+worked example: the domain rule already exists
+(`internal/domain/returnauthorization/rma.go`'s `Authorize` and its
+`Facts` — one open RMA per line, a manifested work unit, the window, the
+policy cap), the route is already pinned in `apis/openapi.yaml` and
+`.claude/rules/rest-api.md`, and the application use case + HTTP adapter
+(planned next) follow the shape below.
 
 ## 1. Domain first: does an invariant already exist, or do you need one?
 
@@ -28,8 +31,9 @@ table-driven unit test, BEFORE touching the application or adapter layers.
 
 ## 2. Application: define the use case
 
-Add a new file in `internal/application/usecases/` (one file per use
-case, this repo's convention — not one giant `usecases.go`). Shape:
+Add a new file in the application layer's use-cases package (planned for
+this repo; one file per use case, the fleet convention — not one giant
+`usecases.go`). Shape:
 
 ```go
 package usecases
@@ -39,8 +43,8 @@ type <Verb><Noun>Result struct {
 }
 
 // <Verb><Noun> — one sentence: what business capability this represents,
-// and the domain rule it enforces (mirror RunCycleCount's doc comment,
-// which states the Unlocated-on-shortfall rule right in the doc comment).
+// and the domain rule it enforces (mirror the aggregate's own doc comment:
+// AuthorizeReturn states the one-open-RMA-per-line rule right in rma.go).
 type <Verb><Noun> struct {
     Repo   ports.<Aggregate>Repo   // driven ports only — never a concrete adapter
     Events ports.EventPublisher    // if this raises a domain event
@@ -57,19 +61,19 @@ func (uc *<Verb><Noun>) Execute(ctx context.Context, /* domain-typed args */) (<
 }
 ```
 
-Add the port to `internal/application/ports/` if it doesn't exist yet —
-ports are interfaces ONLY (`TestPortsAreCustomerOwned`/
-`TestApplicationPortsContainOnlyInterfaces`-style fitness tests in
-`internal/architecture/` enforce this; a struct or function in a ports
-package fails CI).
+Add the port to the application layer's ports package (planned for this
+repo) if it doesn't exist yet —
+ports are interfaces ONLY (`TestPortsAreCustomerOwned`-style fitness
+tests in `internal/architecture/` where present enforce this; a struct or
+function in a ports package fails CI).
 
-Write the use case's unit test against the in-memory adapter
-(`internal/adapters/outbound/memory/`) — never a real Postgres/HTTP call
+Write the use case's unit test against an in-memory test double for the
+port — never a real Postgres/HTTP call
 in a unit test. Cover the success path AND the domain-rule failure path.
 
 ## 3. Adapter: wire the HTTP handler
 
-In `internal/adapters/inbound/http/`:
+In the inbound HTTP adapter (planned for this repo):
 
 1. `dto.go` — add the request/response DTO structs (JSON tags, this repo's
    naming convention: `<verb><noun>Request`/`<verb><noun>Response`).
@@ -78,7 +82,7 @@ In `internal/adapters/inbound/http/`:
 2. `server.go` — add the route (`r.Post("/path/{param}", s.handle<Name>)`
    in the router setup) and the handler function:
    - decode + validate the request (`decodeJSON`), converting to domain
-     value objects immediately (`shared.NewBinId`, `shared.NewQuantity`,
+     value objects immediately (`shared.NewRMAID`, `shared.NewQuantity`,
      etc.) — a bad value fails here as an RFC 7807 validation error, never
      reaches the use case
    - call the use case's `Execute`
@@ -97,24 +101,21 @@ endpoint can produce).
 
 Add the path to `apis/openapi.yaml` (request/response schemas, the RFC
 7807 problem-detail response for each error case — see the existing
-`/bins/{binId}/cycle-count` entry for the shape).
+`/returns` entry for the shape).
 
-Regenerate the Docusaurus REST reference — this repo's `docs-api-drift`
-CI job fails the PR if you skip this:
+Lint the contract the way CI's `api-lint` job does:
 
 ```bash
-cd docs
-npm run clean-api-docs   # or the repo's own script name — check package.json
-npm run gen-api-docs
+make api-lint     # spectral on apis/openapi.yaml + apis/asyncapi.yaml
 ```
 
 ## 5. Behaviour: add a godog scenario
 
 If this endpoint is user-facing behaviour (not purely internal
-plumbing), add a `.feature` file under `features/` exercising it
-end-to-end against the real HTTP server — see `features/cycle_count.feature`
-for the exact shape this repo's `bdd` CI job expects (Given/When/Then over
-real HTTP, not mocked).
+plumbing), add a `.feature` file under the repo's features directory
+(planned with the BDD step) exercising it
+end-to-end against the real HTTP server — Given/When/Then over
+real HTTP, not mocked.
 
 ## 6. Verify before opening the PR
 

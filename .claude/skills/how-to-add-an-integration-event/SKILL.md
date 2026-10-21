@@ -17,13 +17,13 @@ shared-broker reality has already caused a real incident once.
 ### 1. Is it actually cross-service?
 
 Not every domain event this service raises belongs on the wire. Check
-`internal/adapters/outbound/kafka/publisher.go`'s doc comment — this repo
-forwards only `StockReserved`/`ReservationRevoked`; everything else is a
-local concern published only to the Postgres outbox
-(`internal/adapters/outbound/postgres/event_publisher.go`) for audit, not
+the type catalogue in `docs/adr/0004-cloudevents-envelope-and-type-catalogue.md`
+— this repo publishes exactly the seven types pinned there
+(`ReturnAuthorized` through `ReturnLineStaged`); everything else is a
+local concern that stays in the transactional outbox for audit, not
 broadcast. Before adding a new event to the Kafka publisher, confirm a
 sibling context genuinely needs to react to it — check
-`docs/docs/ddd/context-map.md` or the equivalent ubiquitous-language doc
+`docs/adr/0003-local-copies-and-consumed-contracts.md`
 for who's actually downstream.
 
 ### 2. Envelope: CloudEvents 1.0, structured mode — MANDATORY
@@ -52,9 +52,10 @@ shape, no dual-write, no `EVENT_ENVELOPE_MODE` toggle (see
 `type` follows the platform-wide reverse-DNS convention
 `com.warehouse.<subdomain>.<bounded-context>.<entity>.<EventName>`, all
 lowercase except the final PascalCase event name — e.g.
-`com.warehouse.wms.inventory-storage.reservation.ReservationRevoked`. Take
-the subdomain/context segment from the subdomain table on warehouse-docs'
-Event Standard page (`docs/strategic-design/event-standard-cloudevents.md`);
+`com.warehouse.wms.returns-processing.returnreceipt.ReturnLineInspected`.
+This repo's exact prefix (`wms` subdomain, `returns-processing` context)
+is pinned in `docs/adr/0004-cloudevents-envelope-and-type-catalogue.md`
+and `.claude/rules/integration-events.md`;
 don't guess it. The same `type` is used on the analytics topic; only
 `dataschema` changes (`…:analytics:<EventName>:v1`).
 
@@ -70,16 +71,16 @@ the adapter layer). In the Kafka publisher adapter:
   ```go
   value, err := cloudevents.New(cloudevents.Spec{
       ID:        evt.ID(),            // minted once; the outbox row stores it
-      Entity:    "reservation",
-      EventName: "ReservationRevoked",
-      Subject:   evt.ReservationID(),
+      Entity:    "returnreceipt",
+      EventName: "ReturnLineInspected",
+      Subject:   evt.ReceiptID(),
       Time:      evt.OccurredAt(),
       Stream:    cloudevents.StreamEvents,
       Version:   1,
       Data:      payload,              // unchanged wire payload
   })
   msg := kafkago.Message{
-      Key:     []byte(evt.ReservationID()),
+      Key:     []byte(evt.ReceiptID()),
       Value:   value,
       Headers: append(traceHeaders, cloudevents.ContentTypeHeader()),
   }
@@ -96,13 +97,13 @@ the adapter layer). In the Kafka publisher adapter:
   CloudEvents envelope schema with every attribute required), with its
   exact `type` const and `dataschema`, matching the entity-grouping
   convention already there (group by aggregate, not chronologically)
-- Regenerate the AsyncAPI HTML reference:
+- Lint the contract the way CI's `api-lint` job does, and keep the ADR
+  catalogue in step:
   ```bash
-  cd docs && npm run gen-async-docs:all   # or gen-async-docs, check package.json
+  make api-lint   # spectral on apis/openapi.yaml + apis/asyncapi.yaml
+  make check      # TestEventCatalogueMatchesContract fails until the new
+                  # type has its catalogue line in ADR 0004
   ```
-  This repo's `docs-api-drift` CI job fails the PR if the generated
-  `static/asyncapi/<ctx>/` output doesn't match a fresh regen — a nullable
-  field change here has bitten before.
 
 ### 5. Test
 
@@ -120,10 +121,12 @@ hardcoded `localhost:9092` fails CI).
 ### 1. Never import the sibling's Go packages
 
 This service knows a sibling's topic name, its exact CloudEvents `type`
-strings and payload shape ONLY — never its Go types. See `internal/adapters/outbound/facilitycache/consumer.go`'s
-own doc comment: "This service has no business knowing anything else
-about that context beyond this topic name and the envelope/payload shapes
-below." Hand-mirror the payload struct locally; do not add a Go module
+strings and payload shape ONLY — never its Go types. This repo's consumed
+payloads and their local-copy rules are pinned in
+`docs/adr/0003-local-copies-and-consumed-contracts.md`: this service has
+no business knowing anything else about those contexts beyond the topic
+name and the envelope/payload shapes. Hand-mirror the payload struct
+locally; do not add a Go module
 dependency on the sibling repo (an architecture fitness test in most
 repos in this fleet would catch that anyway for the stricter contexts —
 check this repo's own `internal/architecture/` for a
@@ -169,15 +172,16 @@ EXACTLY what you want: pick up where the single instance left off.
 
 **Pattern B — per-process-unique consumer group (a generated id).** Use
 when this consumer rebuilds a complete read model from a topic's FULL
-history on every start (an event-sourced local cache, not a work queue) —
-see `facilitycache/consumer.go`'s `consumerGroupPrefix` +
-`uniqueConsumerGroup()`. The group id MUST be unique per process instance
-(hostname+PID+timestamp), NEVER a fixed shared string. Consumer group
+history on every start (an event-sourced local cache, not a work queue):
+the group id is a
+prefix + hostname+PID+timestamp, unique per process instance,
+NEVER a fixed shared string. Consumer group
 offsets are shared infrastructure state: a brand-new process joining a
 group an EARLIER instance already consumed resumes from that instance's
 committed offset, so the new process gets marked "ready" with an empty
 local cache having replayed nothing — a silent correctness bug, not a
-crash.
+crash. (This repo's consumers are durable Postgres local copies with
+STABLE groups — Pattern A — per `.claude/rules/integration-events.md`.)
 
 **Never do this** (the actual incident): a fixed shared consumer group id
 on a consumer meant to run as exactly one instance per environment. When
