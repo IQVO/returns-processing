@@ -60,28 +60,77 @@ func TestBrokersFromEnv(t *testing.T) {
 	}
 }
 
-func TestLoadRelayConfigRequiresDatabaseAndBrokers(t *testing.T) {
-	t.Setenv("DATABASE_URL", "")
-	t.Setenv("KAFKA_BROKERS", "")
-	_, err := loadRelayConfig()
-	if err == nil {
-		t.Fatal("want a boot error without DATABASE_URL and KAFKA_BROKERS")
+func TestShutdownDrainDelay(t *testing.T) {
+	cases := map[string]time.Duration{
+		"":    DefaultShutdownDrainDelay,
+		"0":   0,
+		"2s":  2 * time.Second,
+		"-1s": DefaultShutdownDrainDelay,
+		"no":  DefaultShutdownDrainDelay,
 	}
-	for _, want := range []string{"DATABASE_URL", "KAFKA_BROKERS"} {
+	for raw, want := range cases {
+		t.Setenv("SHUTDOWN_DRAIN_DELAY", raw)
+		if got := shutdownDrainDelay(); got != want {
+			t.Errorf("shutdownDrainDelay(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func setBootEnv(t *testing.T, databaseURL, brokers string, groups bool) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", databaseURL)
+	t.Setenv("KAFKA_BROKERS", brokers)
+	for _, name := range consumerGroupEnvs {
+		if groups {
+			t.Setenv(name, strings.ToLower(strings.TrimSuffix(name, "_CONSUMER_GROUP"))+"-itest")
+		} else {
+			t.Setenv(name, "")
+		}
+	}
+}
+
+// Boot fails naming EVERY missing mandatory variable, the three consumer
+// groups included (they are read now, the consumers land later: fail-closed).
+func TestLoadBootConfigNamesEveryMissingVariable(t *testing.T) {
+	setBootEnv(t, "", "", false)
+	_, err := loadBootConfig()
+	if err == nil {
+		t.Fatal("want a boot error with everything unset")
+	}
+	for _, want := range append([]string{"DATABASE_URL", "KAFKA_BROKERS"}, consumerGroupEnvs...) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not name %s", err, want)
 		}
 	}
+}
 
-	t.Setenv("DATABASE_URL", "postgres://u:p@h:5432/returns")
-	t.Setenv("KAFKA_BROKERS", "b:9092")
+// A complete environment boots; each consumer group env carries through.
+func TestLoadBootConfigAcceptsACompleteEnvironment(t *testing.T) {
+	setBootEnv(t, "postgres://u:x@h:5432/returns", "b:9092", true)
 	t.Setenv("OUTBOX_MAX_ATTEMPTS", "3")
 	t.Setenv("OUTBOX_RELAY_INTERVAL", "250ms")
-	cfg, err := loadRelayConfig()
+	t.Setenv("HTTP_ADDR", "127.0.0.1:9999")
+	cfg, err := loadBootConfig()
 	if err != nil {
-		t.Fatalf("loadRelayConfig: %v", err)
+		t.Fatalf("loadBootConfig: %v", err)
 	}
-	if cfg.databaseURL != "postgres://u:p@h:5432/returns" || cfg.maxAttempts != 3 || cfg.interval != 250*time.Millisecond {
+	if cfg.databaseURL != "postgres://u:x@h:5432/returns" || cfg.maxAttempts != 3 ||
+		cfg.interval != 250*time.Millisecond || cfg.httpAddr != "127.0.0.1:9999" || len(cfg.brokers) != 1 {
 		t.Fatalf("cfg = %+v", cfg)
+	}
+	for _, name := range consumerGroupEnvs {
+		if cfg.groups[name] == "" {
+			t.Errorf("cfg.groups[%s] is empty", name)
+		}
+	}
+}
+
+// One missing consumer group alone is a boot error naming it.
+func TestLoadBootConfigFailsOnOneMissingGroup(t *testing.T) {
+	setBootEnv(t, "postgres://u:x@h:5432/returns", "b:9092", true)
+	t.Setenv("MANIFEST_CONSUMER_GROUP", "")
+	_, err := loadBootConfig()
+	if err == nil || !strings.Contains(err.Error(), "MANIFEST_CONSUMER_GROUP") {
+		t.Fatalf("err = %v, want MANIFEST_CONSUMER_GROUP named", err)
 	}
 }

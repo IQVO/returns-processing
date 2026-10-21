@@ -12,9 +12,11 @@ import (
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/postgres"
 )
 
-// The outbox relay host's configuration, all from the environment: this
-// service is built step by step and today's binary is the relay host only
-// (no HTTP, no consumers yet); every later piece grows in this same root.
+// The composition root's configuration, all from the environment. Every
+// mandatory variable is a boot error naming it: this service runs on real
+// Postgres and real Kafka, and the consumer groups are read (and required)
+// even though the consumers themselves land in a later step — a deployment
+// missing one must fail at boot, not at the step that first uses it.
 
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
@@ -73,6 +75,25 @@ func outboxMaxAttempts(raw string) int {
 	return n
 }
 
+// DefaultShutdownDrainDelay is how long shutdown waits, after flipping
+// /readyz to not-ready, before closing the listener (SHUTDOWN_DRAIN_DELAY
+// overrides it; "0" disables it).
+const DefaultShutdownDrainDelay = 5 * time.Second
+
+// shutdownDrainDelay reads SHUTDOWN_DRAIN_DELAY ("0" disables; unset,
+// negative or unparsable = the default).
+func shutdownDrainDelay() time.Duration {
+	raw := os.Getenv("SHUTDOWN_DRAIN_DELAY")
+	if raw == "" {
+		return DefaultShutdownDrainDelay
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return DefaultShutdownDrainDelay
+	}
+	return d
+}
+
 // brokersFromEnv reads KAFKA_BROKERS (comma separated); nil when unset.
 func brokersFromEnv() []string {
 	var brokers []string
@@ -84,24 +105,40 @@ func brokersFromEnv() []string {
 	return brokers
 }
 
-// relayConfig is the mandatory configuration of the relay host: real
-// Postgres and real Kafka, no default and no degraded mode behind either.
-type relayConfig struct {
+// consumerGroups are the pinned consumer group env names of
+// .claude/rules/integration-events.md (one per consumed topic; the consumers
+// themselves are a later step — the ids are read now so a deployment missing
+// one fails at boot).
+var consumerGroupEnvs = []string{
+	"PRODUCT_CLASSIFICATION_CONSUMER_GROUP",
+	"ORDER_LINES_CONSUMER_GROUP",
+	"MANIFEST_CONSUMER_GROUP",
+}
+
+// bootConfig is the mandatory configuration of the service: real Postgres,
+// real Kafka, the three pinned consumer groups. There is no default and no
+// degraded mode behind any of it.
+type bootConfig struct {
 	databaseURL string
 	brokers     []string
 	interval    time.Duration
 	maxAttempts int
+	httpAddr    string
+	// groups carries the env NAME -> group id of every pinned consumer.
+	groups map[string]string
 }
 
-// loadRelayConfig reads and validates the mandatory environment, reporting
-// every problem at once so the process fails fast at boot, before it opens a
-// connection.
-func loadRelayConfig() (relayConfig, error) {
-	cfg := relayConfig{
+// loadBootConfig reads and validates the mandatory environment, reporting
+// every problem at once, each naming its variable, so the process fails fast
+// at boot, before it opens a connection or binds the listener.
+func loadBootConfig() (bootConfig, error) {
+	cfg := bootConfig{
 		databaseURL: os.Getenv("DATABASE_URL"),
 		brokers:     brokersFromEnv(),
 		interval:    parseRelayInterval(getenv("OUTBOX_RELAY_INTERVAL", "")),
 		maxAttempts: outboxMaxAttempts(os.Getenv("OUTBOX_MAX_ATTEMPTS")),
+		httpAddr:    getenv("HTTP_ADDR", ":8080"),
+		groups:      map[string]string{},
 	}
 	var problems []error
 	if cfg.databaseURL == "" {
@@ -110,8 +147,16 @@ func loadRelayConfig() (relayConfig, error) {
 	if len(cfg.brokers) == 0 {
 		problems = append(problems, errors.New("KAFKA_BROKERS is required: this service runs on real Kafka"))
 	}
+	for _, name := range consumerGroupEnvs {
+		id := strings.TrimSpace(os.Getenv(name))
+		if id == "" {
+			problems = append(problems, fmt.Errorf("%s is required: the consumers run on the shared broker and their group ids are pinned in .claude/rules/integration-events.md", name))
+			continue
+		}
+		cfg.groups[name] = id
+	}
 	if len(problems) > 0 {
-		return cfg, fmt.Errorf("invalid configuration: %w", errors.Join(problems...))
+		return bootConfig{}, fmt.Errorf("invalid configuration: %w", errors.Join(problems...))
 	}
 	return cfg, nil
 }
