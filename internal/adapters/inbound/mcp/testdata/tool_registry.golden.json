@@ -1,0 +1,245 @@
+[
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the disposition policy table: the version, the return window in days, the maximum units per return line, the veto outcome a guardrail demotes to (default DISPOSE), the declared instant and the rule table mapping each inspection grade (A, B, C, SCRAP) and product class to an outcome (RESTOCK, REFURBISH, LIQUIDATE, DISPOSE, RTV); \"*\" is the default product class of a rule. Omitting version reads the CURRENT version; passing a version number reads that declared one (the policy is append-only: a change is a new version, never a rewrite). Read-only; fails with policy-not-found when the version does not exist.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "description": "optional declared version to read; omitted means the CURRENT policy version",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_disposition_policy",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "declared_at": {
+          "type": "string"
+        },
+        "max_units_per_line": {
+          "type": "integer"
+        },
+        "return_window_days": {
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "type": "integer"
+        },
+        "rules": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "grade": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string"
+              },
+              "product_class": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "grade",
+              "product_class",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "version": {
+          "type": "integer"
+        },
+        "veto_outcome": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "return_window_days",
+        "max_units_per_line",
+        "veto_outcome",
+        "rules",
+        "declared_at"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read one return authorization (RMA) by id: the original order id and line number it was authorized against, the work unit ({order_id}-line-{line_no}) the goods shipped in, the sku, quantity and site, the reason code, the status (REQUESTED, AUTHORIZED, REJECTED, RECEIVED or CLOSED), the rejection code on a refused return, the instant the return window ends and the aggregate version. Read-only; fails with rma-not-found for an unknown id and invalid-rma-id for a malformed one.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "rma_id": {
+          "description": "the return authorization id, e.g. rma-1b4e28ba",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rma_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_return",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "line_no": {
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "type": "integer"
+        },
+        "order_id": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "integer"
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "rejection_code": {
+          "type": "string"
+        },
+        "rma_id": {
+          "type": "string"
+        },
+        "site_id": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "window_ends_at": {
+          "type": "string"
+        },
+        "work_unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rma_id",
+        "order_id",
+        "line_no",
+        "sku",
+        "quantity",
+        "site_id",
+        "status",
+        "version"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List every return authorization (RMA) of one original order, ordered by line number then id. An order with no returns -- or an unknown order -- answers an empty list, never an error. Each item carries the same shape as get_return. Read-only; fails with invalid-order-id for a malformed order id.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "order_id": {
+          "description": "the original order id the returns were authorized against, e.g. ord-7c9e",
+          "type": "string"
+        }
+      },
+      "required": [
+        "order_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_returns_by_order",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "line_no": {
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
+              },
+              "order_id": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "integer"
+              },
+              "reason_code": {
+                "type": "string"
+              },
+              "rejection_code": {
+                "type": "string"
+              },
+              "rma_id": {
+                "type": "string"
+              },
+              "site_id": {
+                "type": "string"
+              },
+              "sku": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "window_ends_at": {
+                "type": "string"
+              },
+              "work_unit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "rma_id",
+              "order_id",
+              "line_no",
+              "sku",
+              "quantity",
+              "site_id",
+              "status",
+              "version"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    }
+  }
+]

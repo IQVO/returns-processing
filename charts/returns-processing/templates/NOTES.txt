@@ -1,0 +1,30 @@
+{{ .Chart.Name }} has been deployed.
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+Service:   {{ include "returns-processing.fullname" . }} ({{ .Values.service.type }}, port {{ .Values.service.port }})
+
+To reach it locally:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "returns-processing.fullname" . }} 8080:{{ .Values.service.port }}
+  curl http://localhost:8080/healthz
+
+Runtime (ADR 0001): real Postgres and real Kafka only. Brokers: {{ .Values.kafka.brokers }}.
+Return events are relayed from the transactional outbox onto
+warehouse.returns-processing.events.
+
+The three local-copy consumers are always ON (no *_MODE exists in this
+service's contract):
+  group {{ .Values.config.productClassificationConsumerGroup }}  <- warehouse.product-master.events
+  group {{ .Values.config.orderLinesConsumerGroup }}            <- warehouse.order-management.events
+  group {{ .Values.config.manifestConsumerGroup }}              <- warehouse.fulfillment.events
+
+/readyz answers 503 until Postgres answers and a Kafka broker answers a
+metadata request. Topics are not checked: the relay's writer auto-creates
+the service's own topics on first write (fleet convention), the service
+never creates them through an admin API, and a consumed topic that does not
+exist yet shows as consumer retry logs, not as unreadiness.
+{{- if .Values.mcp.enabled }}
+
+MCP server (read-only, no auth): {{ include "returns-processing.mcpFullname" . }}:{{ .Values.mcp.service.port }}/mcp (Streamable HTTP).
+{{- end }}

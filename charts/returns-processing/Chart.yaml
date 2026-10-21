@@ -1,0 +1,12 @@
+apiVersion: v2
+name: returns-processing
+description: Returns Processing — return authorizations, receipts with grading, and dispositions; publishes Return events on warehouse.returns-processing.events
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/IQVO/returns-processing
+keywords:
+  - ddd
+  - hexagonal-architecture
+  - warehouse-management-system
+  - golang

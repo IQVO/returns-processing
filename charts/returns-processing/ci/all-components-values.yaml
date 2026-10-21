@@ -1,0 +1,17 @@
+# Used by `helm lint` / `ct lint`: every optional value and component set at
+# once (api + mcp), so a template that renders alone but collides with
+# another is caught by `helm lint`.
+database:
+  existingSecret: "returns-processing-db"
+kafka:
+  brokers: "kafka-0.kafka.warehouse-systems.svc.cluster.local:9092,kafka-1.kafka.warehouse-systems.svc.cluster.local:9092"
+config:
+  logLevel: "debug"
+  outboxRelayInterval: "500ms"
+  outboxMaxAttempts: 20
+  shutdownDrainDelay: "5s"
+  productClassificationConsumerGroup: "returns-processing-product-classification"
+  orderLinesConsumerGroup: "returns-processing-order-lines"
+  manifestConsumerGroup: "returns-processing-manifest"
+mcp:
+  enabled: true

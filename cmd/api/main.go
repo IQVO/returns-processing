@@ -91,7 +91,10 @@ func run(ctx context.Context) error {
 	// pool.Close is deferred FIRST so it runs LAST, after the HTTP drain,
 	// the consumers and the relay have stopped.
 	defer pool.Close()
-	if err := postgres.RunMigrations(cfg.databaseURL); err != nil {
+	// The migrations run against MIGRATIONS_DATABASE_URL when it is set (a
+	// DIRECT DSN: golang-migrate's pg_advisory_lock is session-scoped and
+	// PgBouncer's transaction pooling cannot honour it), else DATABASE_URL.
+	if err := postgres.RunMigrations(getenv(postgres.EnvMigrationsDatabaseURL, cfg.databaseURL)); err != nil {
 		logger.Error("migrations failed", "error", err)
 		return err
 	}
