@@ -99,6 +99,7 @@ func TestAllocationsHandler_DeadLettersALinelessAllocation(t *testing.T) {
 func TestNewAllocationsConsumer_Wiring(t *testing.T) {
 	uc := &usecases.ApplyAllocations{Processed: memory.NewProcessedEvents(), Lines: memory.NewAllocatedLines()}
 	c := kafka.NewAllocationsConsumerForTopic([]string{"b1"}, "topic-x", "group-x", uc, nil)
+	t.Cleanup(func() { _ = c.Close() })
 	for _, typ := range []string{kafka.TypeOrderAllocated, kafka.TypeOrderPartiallyAllocated} {
 		if _, ok := c.Handlers[typ]; !ok {
 			t.Fatalf("handlers = %v, want %s", c.Handlers, typ)

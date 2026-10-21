@@ -110,6 +110,7 @@ func TestManifestsHandler_DeadLettersAnUnreversibleOrderRef(t *testing.T) {
 func TestNewManifestsConsumer_Wiring(t *testing.T) {
 	uc := &usecases.ApplyManifest{Processed: memory.NewProcessedEvents(), Units: memory.NewManifestedUnits()}
 	c := kafka.NewManifestsConsumerForTopic([]string{"b1"}, "topic-x", "group-x", uc, nil)
+	t.Cleanup(func() { _ = c.Close() })
 	if _, ok := c.Handlers[kafka.TypePackageManifested]; !ok {
 		t.Fatalf("handlers = %v, want %s", c.Handlers, kafka.TypePackageManifested)
 	}

@@ -163,6 +163,7 @@ func TestWithDotTag(t *testing.T) {
 func TestNewProductClassesConsumer_Wiring(t *testing.T) {
 	uc := &usecases.ApplyProductClassification{Processed: memory.NewProcessedEvents(), Classes: memory.NewProductClasses()}
 	c := kafka.NewProductClassesConsumerForTopic([]string{"b1"}, "topic-x", "group-x", uc, nil)
+	t.Cleanup(func() { _ = c.Close() })
 	if c.Topic != "topic-x" || c.Name == "" {
 		t.Fatalf("consumer = %q on %q", c.Name, c.Topic)
 	}
