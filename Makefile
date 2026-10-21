@@ -32,7 +32,7 @@ MUTATION_FULL_PKG  := ./internal/domain
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build vet fmt fmt-check lint test coverage integration bdd arch-test mutation mutation-full vuln check check-all
+.PHONY: help build vet fmt fmt-check lint test coverage integration bdd arch-test mutation mutation-full api-lint vuln check check-all
 
 help:
 	@echo "returns — local quality gate (targets mirror .github/workflows/ci.yml)"
@@ -49,6 +49,7 @@ help:
 	@echo "                 (testcontainers boots its own Postgres/Kafka; needs only Docker; not in check)"
 	@echo "  bdd            go test ./... -run TestFeatures -v — godog/Gherkin acceptance"
 	@echo "  arch-test      go test ./internal/architecture/... -v — hexagonal fitness"
+	@echo "  api-lint       spectral on apis/openapi.yaml + apis/asyncapi.yaml"
 	@echo "  mutation       gremlins on $(MUTATION_FAST_PKG) — the fast blocking subset"
 	@echo "  mutation-full  gremlins on $(MUTATION_FULL_PKG) — the exhaustive scheduled run"
 	@echo "  vuln           govulncheck ./... — supply-chain / stdlib CVE sensor"
@@ -114,6 +115,18 @@ bdd:
 
 arch-test:
 	$(GO) test ./internal/architecture/... -v
+
+# Mirrors the ci.yml api-lint job: spectral with the repo rulesets, one spec
+# each. Install once with `npm install -g @stoplight/spectral-cli`.
+api-lint:
+	@if ! command -v spectral >/dev/null 2>&1; then \
+		echo "spectral is not installed (or not on PATH)."; \
+		echo "Install it with:"; \
+		echo "  npm install -g @stoplight/spectral-cli"; \
+		exit 1; \
+	fi
+	spectral lint apis/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+	spectral lint apis/asyncapi.yaml --ruleset .spectral.asyncapi.yaml --fail-severity=warn
 
 mutation:
 	@if ! command -v $(GREMLINS) >/dev/null 2>&1; then \
