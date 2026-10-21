@@ -70,7 +70,7 @@ ADR 0044) and exception-management consumes `UnexpectedReturnReceived` to open a
 Two producer-side gaps are recorded as roadmap, never faked: order-management's allocated lines carry
 no `quantity`, so the authorized quantity is capped by policy only; and inventory-storage's
 `ItemStowed` is not on its integration topic yet, so a staged line's stow is invisible here
-([ADR 0003](/docs/adr/0003-local-copies-and-consumed-contracts#planned-not-built-from-adr-0001-never-faked)).
+([ADR 0003](/docs/adr/0003-local-copies-and-consumed-contracts)).
 The service is packaged (Helm chart with an api component and a default-off read-only mcp component)
 but not yet registered in `warehouse-infra` and has cut no release
 ([Runbook](/docs/operations/runbook#deployment-status)).

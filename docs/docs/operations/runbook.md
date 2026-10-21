@@ -72,6 +72,13 @@ commits. An unknown type commits past untouched; a non-CloudEvent (e.g. a retire
 WARN-logged and skipped; a payload that can never apply (e.g. a blank SKU) is poison: bounded
 retry, then dead-letter, and the message behind it still applies.
 
+### Dead-letter topics
+
+Each consumed topic has its `<topic>.dlq`: a poison message lands there verbatim with `x-dlq-*`
+headers naming the consumer and the cause, after a bounded retry. Producer-side, outbox rows the
+encoder refuses go to `warehouse.returns-processing.events.dlq`. A dead letter is never retried
+automatically; it is an operator input.
+
 ## Outbox relay
 
 One pass every `OUTBOX_RELAY_INTERVAL` (default 1 s) claims up to 100 due rows `FOR UPDATE SKIP
