@@ -93,3 +93,17 @@ type PolicyView struct {
 	VetoOutcome      string
 	DeclaredAt       time.Time
 }
+
+// IdempotencyRecord is the stored answer of one Idempotency-Key: what the
+// first request with that key answered, so a replay can return it verbatim.
+// Body is the captured response body (with its headers, JSON-encoded by the
+// HTTP middleware); Fingerprint identifies the request (method, path, body)
+// so the same key with a different request is told apart.
+type IdempotencyRecord struct {
+	Key         string
+	Fingerprint string
+	Status      int
+	ContentType string
+	Body        []byte
+	CreatedAt   time.Time
+}

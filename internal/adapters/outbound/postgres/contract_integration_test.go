@@ -46,6 +46,12 @@ func TestPolicyRepoContract(t *testing.T) {
 	})
 }
 
+func TestIdempotencyStoreContract(t *testing.T) {
+	repocontract.IdempotencyStore(t, func(t *testing.T) ports.IdempotencyStore {
+		return postgres.NewIdempotencyStore(pgtest.NewPool(t))
+	})
+}
+
 func TestAllocatedLinesContract(t *testing.T) {
 	repocontract.AllocatedLines(t, func(t *testing.T) repocontract.AllocatedLinesSeeds {
 		return &pgAllocated{postgres.NewAllocatedLines(pgtest.NewPool(t))}

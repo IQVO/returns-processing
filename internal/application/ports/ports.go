@@ -152,6 +152,19 @@ type Clock interface {
 	Now() time.Time
 }
 
+// IdempotencyStore keeps the answers of the POSTs/PUTs made with an
+// Idempotency-Key, so a retried request replays the stored response instead
+// of running its effects twice. Only 2xx and 4xx answers are ever stored
+// (the HTTP middleware's rule); the first writer of a key wins.
+type IdempotencyStore interface {
+	// Lookup returns the stored answer of key, or ok=false when the key has
+	// none.
+	Lookup(ctx context.Context, key string) (views.IdempotencyRecord, bool, error)
+	// Save stores rec. A key that already has an answer keeps it: the first
+	// writer wins and a later Save changes nothing.
+	Save(ctx context.Context, rec views.IdempotencyRecord) error
+}
+
 // UnitOfWork runs fn as ONE atomic unit: every port call fn makes with the
 // ctx it is handed commits together when fn returns nil, or rolls back
 // together when fn returns an error (or panics). Use cases tolerate a NIL

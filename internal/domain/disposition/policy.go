@@ -79,6 +79,11 @@ func (p *DispositionPolicy) VetoOutcome() Outcome { return p.vetoOutcome }
 // DeclaredAt returns when this version was declared.
 func (p *DispositionPolicy) DeclaredAt() time.Time { return p.declaredAt }
 
+// Rules returns the policy table, in declaration order. The copy is the
+// caller's: the table is data an operator reads back (GET
+// /disposition-policies/current), never something to mutate in place.
+func (p *DispositionPolicy) Rules() []Rule { return append([]Rule(nil), p.rules...) }
+
 // WindowEndsFrom returns t + return window days (the RMA window end).
 func (p *DispositionPolicy) WindowEndsFrom(t time.Time) time.Time {
 	return t.AddDate(0, 0, int(p.returnWindowDays))

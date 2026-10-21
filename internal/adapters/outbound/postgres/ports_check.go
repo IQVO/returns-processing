@@ -17,4 +17,5 @@ var (
 	_ ports.ProductClasses          = (*ProductClasses)(nil)
 	_ ports.IDGen                   = (*IDGen)(nil)
 	_ ports.Clock                   = (*Clock)(nil)
+	_ ports.IdempotencyStore        = (*IdempotencyStore)(nil)
 )
