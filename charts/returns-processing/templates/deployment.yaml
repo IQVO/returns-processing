@@ -1,0 +1,139 @@
+{{- include "returns-processing.requireDatabase" . -}}
+{{- include "returns-processing.requireKafka" . -}}
+{{- include "returns-processing.requireConsumerGroups" . -}}
+{{- include "returns-processing.requireGracePeriod" . -}}
+{{- include "returns-processing.requireNoModeEnv" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "returns-processing.fullname" . }}
+  labels:
+    {{- include "returns-processing.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "returns-processing.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "returns-processing.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "returns-processing.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "returns-processing.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/api"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          # Every config.* value also reaches cmd/api through the chart
+          # ConfigMap (D14 pattern). The explicit `env` entries below win
+          # over envFrom for the same key and carry the same values; the
+          # checksum/config annotation above rolls the pods when the
+          # ConfigMap changes. tests/render_test.sh asserts the mount and
+          # that every variable the binary reads is rendered.
+          envFrom:
+            - configMapRef:
+                name: {{ include "returns-processing.fullname" . }}
+          # Env contract verified against cmd/api/main.go's header comment.
+          # No *_MODE variable is ever set: none exists in the contract
+          # (ADR 0001: real Postgres and real Kafka are the only runtime).
+          env:
+            - name: HTTP_ADDR
+              value: {{ .Values.config.httpAddr | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            {{- with .Values.config.outboxRelayInterval }}
+            - name: OUTBOX_RELAY_INTERVAL
+              value: {{ . | quote }}
+            {{- end }}
+            # The relay excludes a row after this many failures (0 = unlimited).
+            - name: OUTBOX_MAX_ATTEMPTS
+              value: {{ .Values.config.outboxMaxAttempts | quote }}
+            {{- with .Values.config.shutdownDrainDelay }}
+            - name: SHUTDOWN_DRAIN_DELAY
+              value: {{ . | quote }}
+            {{- end }}
+            # ADR 0003 local copies. The three consumer group ids are
+            # mandatory and come from values, never a literal: a stable id is
+            # what makes a rescheduled pod resume from its committed offsets.
+            - name: PRODUCT_CLASSIFICATION_CONSUMER_GROUP
+              value: {{ .Values.config.productClassificationConsumerGroup | quote }}
+            - name: ORDER_LINES_CONSUMER_GROUP
+              value: {{ .Values.config.orderLinesConsumerGroup | quote }}
+            - name: MANIFEST_CONSUMER_GROUP
+              value: {{ .Values.config.manifestConsumerGroup | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "returns-processing.databaseSecretName" . }}
+                  key: {{ .Values.database.existingSecretKey }}
+            {{- if .Values.database.migrationsExistingSecretKey }}
+            # See values.yaml's database.migrationsExistingSecretKey comment:
+            # a direct (non-pooled) connection used only for the
+            # golang-migrate step, never for the runtime pgxpool.
+            # `optional: true` so a secret without this key still starts the
+            # pod -- the binary falls back to DATABASE_URL.
+            - name: MIGRATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "returns-processing.databaseSecretName" . }}
+                  key: {{ .Values.database.migrationsExistingSecretKey }}
+                  optional: true
+            {{- end }}
+            - name: KAFKA_BROKERS
+              value: {{ .Values.kafka.brokers | quote }}
+            {{- range .Values.extraEnv }}
+            - {{ toYaml . | nindent 14 | trim }}
+            {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

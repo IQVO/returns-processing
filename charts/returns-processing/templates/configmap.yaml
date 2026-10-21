@@ -1,0 +1,29 @@
+# Non-secret configuration of the api component, mirrored from the env the
+# Deployment renders and mounted into the api container with envFrom (the
+# explicit env entries win for the same key); the Deployment's
+# checksum/config annotation rolls the pods whenever any of it changes. Every
+# key is a variable cmd/api reads (tests/render_test.sh). DATABASE_URL never
+# lands here: it lives in the Secret (templates/secret.yaml or
+# database.existingSecret). No *_MODE variable is ever rendered: none exists
+# in the binary's contract (ADR 0001).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "returns-processing.fullname" . }}
+  labels:
+    {{- include "returns-processing.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+data:
+  HTTP_ADDR: {{ .Values.config.httpAddr | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  KAFKA_BROKERS: {{ required "returns-processing requires kafka.brokers to be set (KAFKA_BROKERS, comma-separated): the service runs on real Kafka only and exits at boot without it (ADR 0001)." .Values.kafka.brokers | quote }}
+  PRODUCT_CLASSIFICATION_CONSUMER_GROUP: {{ required "returns-processing requires config.productClassificationConsumerGroup to be set (PRODUCT_CLASSIFICATION_CONSUMER_GROUP)" .Values.config.productClassificationConsumerGroup | quote }}
+  ORDER_LINES_CONSUMER_GROUP: {{ required "returns-processing requires config.orderLinesConsumerGroup to be set (ORDER_LINES_CONSUMER_GROUP)" .Values.config.orderLinesConsumerGroup | quote }}
+  MANIFEST_CONSUMER_GROUP: {{ required "returns-processing requires config.manifestConsumerGroup to be set (MANIFEST_CONSUMER_GROUP)" .Values.config.manifestConsumerGroup | quote }}
+  {{- with .Values.config.outboxRelayInterval }}
+  OUTBOX_RELAY_INTERVAL: {{ . | quote }}
+  {{- end }}
+  OUTBOX_MAX_ATTEMPTS: {{ .Values.config.outboxMaxAttempts | quote }}
+  {{- with .Values.config.shutdownDrainDelay }}
+  SHUTDOWN_DRAIN_DELAY: {{ . | quote }}
+  {{- end }}
