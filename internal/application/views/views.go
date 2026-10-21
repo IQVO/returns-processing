@@ -10,7 +10,11 @@
 //     inbound adapters receive from the read use cases.
 package views
 
-import "time"
+import (
+	"time"
+
+	"github.com/claudioed/returns-processing/internal/domain/disposition"
+)
 
 // AllocatedLine is one order line of the allocations local copy (ADR 0003),
 // fed by order-management's LineAllocated facts.
@@ -82,15 +86,15 @@ type DispositionView struct {
 	Version       int64
 }
 
-// PolicyView is the read DTO for one declared policy version. The domain
-// aggregate exposes no rule-table accessor, so the view carries the policy's
-// scalar bounds only — a redeclaration comes in through the use case input,
-// which does carry the rules.
+// PolicyView is the read DTO for one declared policy version: the scalar
+// bounds and the rule table (the domain exposes both since the read accessor
+// landed; a redeclaration comes in through the use case input).
 type PolicyView struct {
 	Version          int64
 	ReturnWindowDays int32
 	MaxUnitsPerLine  int64
 	VetoOutcome      string
+	Rules            []disposition.Rule
 	DeclaredAt       time.Time
 }
 

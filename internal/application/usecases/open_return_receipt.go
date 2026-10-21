@@ -59,7 +59,9 @@ func (uc *OpenReturnReceipt) Execute(ctx context.Context, in ReturnReceiptInput)
 		lines = append(lines, line)
 	}
 	r, err := returnreceipt.Open(returnreceipt.OpenInput{
-		ReceiptID: uc.IDs.New("receipt"),
+		// "rcpt-": the id prefix of apis/openapi.yaml's ReceiptId pattern
+		// (the spec is the contract; a service-minted id must match it).
+		ReceiptID: uc.IDs.New("rcpt"),
 		RMAID:     in.RMAID,
 		SiteID:    in.SiteID,
 		Lines:     lines,

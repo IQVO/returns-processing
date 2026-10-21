@@ -85,14 +85,15 @@ func ReturnView(r *returnauthorization.RMA) views.ReturnView {
 	}
 }
 
-// PolicyView projects a policy version into its read DTO (the scalar bounds;
-// the rule table has no domain accessor).
+// PolicyView projects a policy version into its read DTO (the scalar bounds
+// and the rule table).
 func PolicyView(p *disposition.DispositionPolicy) views.PolicyView {
 	return views.PolicyView{
 		Version:          p.Version(),
 		ReturnWindowDays: p.ReturnWindowDays(),
 		MaxUnitsPerLine:  p.MaxUnitsPerLine(),
 		VetoOutcome:      string(p.VetoOutcome()),
+		Rules:            p.Rules(),
 		DeclaredAt:       p.DeclaredAt(),
 	}
 }

@@ -17,7 +17,7 @@ func TestOpenReturnReceipt_Happy(t *testing.T) {
 		f.matchedLine(1, 3, "rma-1"),
 		usecases.ReceiptLine{LineNo: 2, SKU: "sku-9", Quantity: 1},
 	)
-	if r.Version() != 1 || r.SiteID() != "SITE1" || r.ID() != "receipt-0001" {
+	if r.Version() != 1 || r.SiteID() != "SITE1" || r.ID() != "rcpt-0001" {
 		t.Fatalf("receipt id=%s v=%d site=%s", r.ID(), r.Version(), r.SiteID())
 	}
 	if lines := r.Lines(); len(lines) != 2 ||
