@@ -28,10 +28,16 @@ import (
 // lets consumers dedupe.
 type Outbox struct {
 	pool *pgxpool.Pool
+	// NewID mints the CloudEvents id of each row, ONCE, at publish time.
+	// The default is a random UUID; a test injects a fixed sequence so its
+	// golden envelopes can be compared exactly, id included.
+	NewID func() string
 }
 
 // NewOutbox constructs an Outbox over pool.
-func NewOutbox(pool *pgxpool.Pool) *Outbox { return &Outbox{pool: pool} }
+func NewOutbox(pool *pgxpool.Pool) *Outbox {
+	return &Outbox{pool: pool, NewID: uuid.NewString}
+}
 
 // row is one prepared outbox insert.
 type row struct {
@@ -51,7 +57,7 @@ func (o *Outbox) PublishRMAEvents(ctx context.Context, events ...returnauthoriza
 			return err
 		}
 		rows = append(rows, row{
-			eventID: uuid.NewString(), aggregType: outbox.AggregRMA, aggregID: e.RMAID(),
+			eventID: o.NewID(), aggregType: outbox.AggregRMA, aggregID: e.RMAID(),
 			payload: data, occurredAt: e.OccurredAt(),
 		})
 	}
@@ -67,7 +73,7 @@ func (o *Outbox) PublishReceiptEvents(ctx context.Context, events ...returnrecei
 			return err
 		}
 		rows = append(rows, row{
-			eventID: uuid.NewString(), aggregType: outbox.AggregReceipt, aggregID: e.ReceiptID(),
+			eventID: o.NewID(), aggregType: outbox.AggregReceipt, aggregID: e.ReceiptID(),
 			payload: data, occurredAt: e.OccurredAt(),
 		})
 	}
@@ -83,7 +89,7 @@ func (o *Outbox) PublishDispositionEvents(ctx context.Context, events ...disposi
 			return err
 		}
 		rows = append(rows, row{
-			eventID: uuid.NewString(), aggregType: outbox.AggregDisposition, aggregID: e.DispositionID(),
+			eventID: o.NewID(), aggregType: outbox.AggregDisposition, aggregID: e.DispositionID(),
 			payload: data, occurredAt: e.OccurredAt(),
 		})
 	}
