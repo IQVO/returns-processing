@@ -15,31 +15,14 @@ addition inside an already-decided architecture doesn't.
 
 ## Numbering and location
 
-`docs/docs/adr/NNNN-kebab-case-title.md`, four-digit zero-padded,
+`docs/adr/NNNN-kebab-case-title.md`, four-digit zero-padded,
 sequential — check the highest existing number
-(`git ls-tree --name-only origin/develop -- docs/docs/adr/` and pick the
-next integer, never reuse or guess). `docs/docs/adr/about.md` explains the
-format to readers; you don't need to touch it when adding a new ADR.
-
-## Frontmatter (Docusaurus needs all five fields)
-
-```yaml
----
-id: NNNN-kebab-case-title
-slug: /adr/NNNN-kebab-case-title
-title: "NN. Title (a short noun phrase, matching the heading)"
-sidebar_label: "NN. Short label for the nav sidebar"
-sidebar_position: NN
-description: "One or two sentences — this shows up in search and link
-  previews, so make it stand alone without the rest of the doc."
----
-```
-
-`id`/`slug` are the full kebab-case filename (minus `.md`); `title`/
-`sidebar_label` repeat the number as plain text (`"13. ..."`, not `#13`);
-`sidebar_position` is the bare integer. Getting these inconsistent is the
-most common cause of a broken sidebar entry or 404 after merge — verify
-by running the docs build (see below) before opening the PR.
+(`git ls-tree --name-only origin/develop -- docs/adr/` and pick the
+next integer, never reuse or guess). ADRs in this repo are PLAIN
+markdown: `# ADR NNNN: <title>` heading, then `## Status` with
+`Accepted (YYYY-MM-DD).`, then Nygard sections — no frontmatter, no
+docs-site build (see `docs/adr/0002-aggregates-and-policy.md` for the
+exact shape).
 
 ## Format: Michael Nygard's template
 
@@ -70,19 +53,20 @@ lists benefits reads as marketing, not a decision record.
 ```
 
 The `## Decision` section is the part worth the most editing effort: see
-ADR-0013 (`docs/docs/adr/0013-location-classification-via-facility-events.md`)
-for a model example — it states the exact mechanism (event-fed local
-cache replacing a synchronous HTTP read), names the readiness-gate design,
-and is specific enough that Task "how-to-add-an-integration-event"'s
-consumer-group guidance can point straight at it.
+ADR 0003 (`docs/adr/0003-local-copies-and-consumed-contracts.md`)
+for a model example — it states the exact mechanism (one local-copy row
+per key, apply only newer versions where a version exists, dedupe on the
+CloudEvents id, commit the offset only after the effect), and is specific
+enough that the consumer-group guidance in
+"how-to-add-an-integration-event" can point straight at it.
 
 ## Superseding an earlier ADR
 
 Don't edit the old ADR's Decision section. Add a `## Status` line noting
-`Superseded by ADR-XXXX` on the OLD one (a one-line patch), and open the
+`Superseded by ADR-XXXX` on the OLD one (a one-line patch — this repo's
+convention is to amend with one line, never rewrite an old ADR body), and
+open the
 new ADR referencing it: `**Accepted.** <date>. Supersedes [NN. Old title](./NNNN-old-slug.md).`
-— see ADR-0015 (`0015-remove-rest-identity-layer.md`) for the exact
-wording pattern superseding ADR-0014.
 
 ## Cross-repo decisions: use a companion ADR, not one repo's private opinion
 
@@ -94,17 +78,16 @@ split of responsibility — see facility-layout's ADR-0016/0017 pair. Don't
 write the decision once in one repo and expect the other repo's readers
 to find it; each bounded context's docs site is read independently.
 
-## After writing: regenerate and verify the docs build
+## After writing: verify the gates that actually read ADRs
 
-```bash
-cd docs
-npm ci
-npm run build   # onBrokenLinks / onBrokenAnchors are both 'throw' — this
-                 # WILL fail if the frontmatter/slug is wrong or a
-                 # cross-reference link is broken
-```
+This repo has no docs-site build — ADRs are plain markdown. What reads
+them instead:
 
-A broken ADR link or malformed frontmatter fails the build with a clear
-Docusaurus error, not a silent 404 — always run this locally before
-opening the PR; several repos in this fleet gate this in CI
-(`docs-api-drift`/dedicated docs build job) but not all yet.
+- `make check` runs `TestEventCatalogueMatchesContract`
+  (`internal/architecture/catalogue_fitness_test.go`), which fails when a
+  type in `apis/asyncapi.yaml` has no catalogue line in ADR 0004 — a new
+  produced or consumed type with no ADR line fails CI.
+- `make arch-test` runs the hexagonal fitness suite, which encodes
+  decisions ADR 0002-0004 record.
+
+Run both before opening the PR.

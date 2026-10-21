@@ -1,0 +1,148 @@
+package memory
+
+import (
+	"context"
+	"strconv"
+	"sync"
+
+	"github.com/claudioed/returns-processing/internal/application/views"
+)
+
+// This file holds the doubles of the ADR 0003 event-fed local-copy read
+// ports: the maps a consumer step (or a test, or the BDD wiring) feeds and
+// the use cases read. Put* is feeder-side; the Get methods are the port.
+
+// AllocatedLines is the allocations copy double.
+type AllocatedLines struct {
+	mu    sync.Mutex
+	lines map[string]views.AllocatedLine
+}
+
+// NewAllocatedLines returns an empty double.
+func NewAllocatedLines() *AllocatedLines {
+	return &AllocatedLines{lines: map[string]views.AllocatedLine{}}
+}
+
+// Put records the allocated order line.
+func (a *AllocatedLines) Put(orderID string, lineNo int32, line views.AllocatedLine) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lines[lineKey(orderID, lineNo)] = line
+}
+
+// ApplyAllocatedLine implements ports.AllocatedLineFeed: the consumer-side
+// write of the copy. It is Put (the double has no transaction to join).
+func (a *AllocatedLines) ApplyAllocatedLine(_ context.Context, orderID string, lineNo int32, sku string) error {
+	a.Put(orderID, lineNo, views.AllocatedLine{SKU: sku})
+	return nil
+}
+
+// Get returns the allocated line, or ok=false.
+func (a *AllocatedLines) Get(orderID string, lineNo int32) (views.AllocatedLine, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	l, ok := a.lines[lineKey(orderID, lineNo)]
+	return l, ok
+}
+
+// ManifestedUnits is the package-manifest copy double, keyed by the WES
+// work unit `{order_id}-line-{line_no}` and by package id.
+type ManifestedUnits struct {
+	mu          sync.Mutex
+	byOrderLine map[string]views.ManifestedUnit
+	byPackage   map[string]views.ManifestedUnit
+}
+
+// NewManifestedUnits returns an empty double.
+func NewManifestedUnits() *ManifestedUnits {
+	return &ManifestedUnits{
+		byOrderLine: map[string]views.ManifestedUnit{},
+		byPackage:   map[string]views.ManifestedUnit{},
+	}
+}
+
+// PutByOrderLine records the manifested work unit of the order line and
+// indexes it by its package id, mirroring the Postgres upsert: a
+// re-manifested line replaces the unit wholesale, so the package id it used
+// to carry stops resolving.
+func (m *ManifestedUnits) PutByOrderLine(orderID string, lineNo int32, unit views.ManifestedUnit) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lineKey(orderID, lineNo)
+	if old, ok := m.byOrderLine[key]; ok && old.PackageID != "" && old.PackageID != unit.PackageID {
+		delete(m.byPackage, old.PackageID)
+	}
+	m.byOrderLine[key] = unit
+	if unit.PackageID != "" {
+		m.byPackage[unit.PackageID] = unit
+	}
+}
+
+// ApplyManifestedUnit implements ports.ManifestedUnitFeed: the consumer-side
+// write of the copy. It is PutByOrderLine (the double has no transaction to
+// join).
+func (m *ManifestedUnits) ApplyManifestedUnit(_ context.Context, orderID string, lineNo int32, unit views.ManifestedUnit) error {
+	m.PutByOrderLine(orderID, lineNo, unit)
+	return nil
+}
+
+// GetByOrderLine returns the line's manifested unit, or ok=false.
+func (m *ManifestedUnits) GetByOrderLine(orderID string, lineNo int32) (views.ManifestedUnit, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.byOrderLine[lineKey(orderID, lineNo)]
+	return u, ok
+}
+
+// GetByPackage returns the package's manifested unit, or ok=false.
+func (m *ManifestedUnits) GetByPackage(packageID string) (views.ManifestedUnit, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.byPackage[packageID]
+	return u, ok
+}
+
+// ProductClasses is the product-master classification copy double.
+type ProductClasses struct {
+	mu    sync.Mutex
+	bySKU map[string]views.ProductClass
+}
+
+// NewProductClasses returns an empty double.
+func NewProductClasses() *ProductClasses {
+	return &ProductClasses{bySKU: map[string]views.ProductClass{}}
+}
+
+// Put records the SKU's classification copy, applying only a NEWER version —
+// the LOCAL COPY RULE of the contracts (ProductClassified carries a version;
+// a replayed old version must not overwrite a newer copy), the exact
+// predicate the Postgres upsert guards by.
+func (p *ProductClasses) Put(sku string, pc views.ProductClass) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if stored, ok := p.bySKU[sku]; ok && pc.Version <= stored.Version {
+		return
+	}
+	p.bySKU[sku] = pc
+}
+
+// ApplyProductClass implements ports.ProductClassFeed: the consumer-side
+// write of the copy. It is Put, which applies the same NEWER-version-only
+// rule the Postgres upsert guards by (the double has no transaction to
+// join).
+func (p *ProductClasses) ApplyProductClass(_ context.Context, sku string, pc views.ProductClass) error {
+	p.Put(sku, pc)
+	return nil
+}
+
+// Get returns the SKU's classification, or ok=false.
+func (p *ProductClasses) Get(sku string) (views.ProductClass, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	pc, ok := p.bySKU[sku]
+	return pc, ok
+}
+
+func lineKey(orderID string, lineNo int32) string {
+	return orderID + "\x00" + strconv.FormatInt(int64(lineNo), 10)
+}

@@ -28,7 +28,7 @@ Read models (projections, never aggregates): allocated order lines, manifested w
 - `ReturnLineStaged` — RESTOCK handed to inventory-storage.
 - `UnexpectedReturnReceived` — line with no RMA.
 
-## Key use cases (`internal/application/usecases`)
+## Key use cases (application layer, the next build step)
 
 - `AuthorizeReturn` / `RejectReturn` — RMA against the local copies of allocated lines + manifested work units; `ReturnAuthorized` or `ReturnAuthorizationRejected`.
 - `OpenReturnReceipt` — opens a receipt against an RMA; `UnexpectedReturnReceived` for unmatched lines.

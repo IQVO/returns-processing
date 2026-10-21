@@ -21,18 +21,22 @@ COVERAGE_OUT       := coverage.out
 COVERAGE_PKGS      := ./internal/domain/...,./internal/application/...
 COVERAGE_THRESHOLD := 90
 
-# The fast mutation subset — kept in sync with the `mutation-fast` CI job.
-# Thresholds/workers/timeout live in .gremlins.yaml so both use identical
-# settings. Pick your richest, most behaviourally-dense aggregate here —
-# not necessarily the biggest package, the one with the most branching
-# domain logic (see HARNESS.md's mutation-testing section).
-MUTATION_FAST_PKG  := ./internal/domain/disposition
+# The fast mutation subset — kept in sync with the `mutation-fast` CI job:
+# every domain package of this context, each mutated on its own.
+# `disposition` is the richest, most behaviourally-dense aggregate (the
+# Decide table, guardrails and overrides); `returnauthorization` and
+# `returnreceipt` are the two state machines; `shared` holds the work-unit
+# formula and the blank/NUL rules. Thresholds/workers/timeout live in
+# .gremlins.yaml so both use identical settings. A new package under
+# internal/domain/ MUST be added here AND to the `mutation-fast` loop in
+# ci.yml.
+MUTATION_FAST_PKGS := ./internal/domain/returnauthorization ./internal/domain/returnreceipt ./internal/domain/disposition ./internal/domain/shared
 # The exhaustive scheduled run — kept in sync with the `mutation` CI job.
 MUTATION_FULL_PKG  := ./internal/domain
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build vet fmt fmt-check lint test coverage integration bdd arch-test mutation mutation-full vuln check check-all
+.PHONY: help build vet fmt fmt-check lint test coverage integration bdd arch-test mutation mutation-full api-lint vuln check check-all
 
 help:
 	@echo "returns — local quality gate (targets mirror .github/workflows/ci.yml)"
@@ -49,7 +53,8 @@ help:
 	@echo "                 (testcontainers boots its own Postgres/Kafka; needs only Docker; not in check)"
 	@echo "  bdd            go test ./... -run TestFeatures -v — godog/Gherkin acceptance"
 	@echo "  arch-test      go test ./internal/architecture/... -v — hexagonal fitness"
-	@echo "  mutation       gremlins on $(MUTATION_FAST_PKG) — the fast blocking subset"
+	@echo "  api-lint       spectral on apis/openapi.yaml + apis/asyncapi.yaml"
+	@echo "  mutation       gremlins on each of $(MUTATION_FAST_PKGS) — the fast blocking subset"
 	@echo "  mutation-full  gremlins on $(MUTATION_FULL_PKG) — the exhaustive scheduled run"
 	@echo "  vuln           govulncheck ./... — supply-chain / stdlib CVE sensor"
 	@echo ""
@@ -115,6 +120,18 @@ bdd:
 arch-test:
 	$(GO) test ./internal/architecture/... -v
 
+# Mirrors the ci.yml api-lint job: spectral with the repo rulesets, one spec
+# each. Install once with `npm install -g @stoplight/spectral-cli`.
+api-lint:
+	@if ! command -v spectral >/dev/null 2>&1; then \
+		echo "spectral is not installed (or not on PATH)."; \
+		echo "Install it with:"; \
+		echo "  npm install -g @stoplight/spectral-cli"; \
+		exit 1; \
+	fi
+	spectral lint apis/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+	spectral lint apis/asyncapi.yaml --ruleset .spectral.asyncapi.yaml --fail-severity=warn
+
 mutation:
 	@if ! command -v $(GREMLINS) >/dev/null 2>&1; then \
 		echo "gremlins is not installed (or not on PATH)."; \
@@ -122,7 +139,10 @@ mutation:
 		echo "  go install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)"; \
 		exit 1; \
 	fi
-	$(GREMLINS) unleash $(MUTATION_FAST_PKG)
+	@for pkg in $(MUTATION_FAST_PKGS); do \
+		echo "gremlins unleash $$pkg"; \
+		$(GREMLINS) unleash $$pkg || exit 1; \
+	done
 
 mutation-full:
 	@if ! command -v $(GREMLINS) >/dev/null 2>&1; then \
