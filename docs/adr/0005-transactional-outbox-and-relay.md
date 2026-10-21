@@ -22,8 +22,8 @@ envelope, outbox).
 ### The write side: one transaction, aggregate plus outbox rows
 
 A command's unit of work (`internal/application/usecases/uow.go`) persists the
-aggregate AND inserts already-encoded rows into the `outbox_events` table in
-the SAME Postgres transaction (the `ports.EventPublisher` side of
+aggregate AND inserts already-encoded rows into the `outbox` table in the SAME
+Postgres transaction (the `ports.EventPublisher` side of
 `internal/application/outbox`). The CloudEvents `id` is a UUID minted ONCE at
 encode time and stored with the row, so every relay attempt and every
 redelivery after a crash carries the same `id` — that is the anchor consumers
@@ -64,7 +64,7 @@ the row STAYS in the outbox with its attempts for inspection until an
 operator re-arms it:
 
 ```sql
-UPDATE outbox_events SET attempts = 0, next_attempt_at = now() WHERE id = '<uuid>';
+UPDATE outbox SET attempts = 0, next_attempt_at = now() WHERE id = '<uuid>';
 ```
 
 Later rows then overtake it — per-key ordering included — which is the
