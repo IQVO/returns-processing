@@ -12,12 +12,14 @@ import (
 // mutations corrupt the stored state — the exact bug this file exists to
 // prevent (proven by TestClone_RoundTrip).
 //
-// The domain aggregates expose no Snapshot/Restore — their fields are
-// unexported and the domain layer is frozen behind its mutation gate — so
-// clone copies the structs through reflect. Writing an unexported field
-// needs the reflect.NewAt + unsafe.Pointer recovery below; it stays inside
-// this test-double package. No production adapter ever does this: Postgres
-// rebuilds aggregates from rows, which is the same isolation by other means.
+// The domain aggregates now expose Snapshot/Restore (the Postgres adapter's
+// rehydration path), but those are per-aggregate typed APIs; clone stays
+// generic over any aggregate the doubles store, so it keeps copying the
+// structs through reflect. Writing an unexported field needs the
+// reflect.NewAt + unsafe.Pointer recovery below; it stays inside this
+// test-double package. No production adapter does this: Postgres rebuilds
+// aggregates from rows via Snapshot/Restore, which is the same isolation by
+// other means.
 
 // clone returns a deep copy of *src with the aggregate's `events` slice
 // dropped (the facts were published; a read-back aggregate has none
