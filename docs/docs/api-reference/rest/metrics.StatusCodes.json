@@ -1,0 +1,1 @@
+{"responses":{"200":{"description":"The metrics exposition.","content":{"text/plain":{"schema":{"type":"string"}}}}}}

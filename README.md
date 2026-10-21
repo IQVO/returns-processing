@@ -16,4 +16,22 @@ Returns Processing: WMS-tier Supporting bounded context of the warehouse-systems
 
 ## Status
 
-Bootstrap commit: harness, guides and ADR 0001. Contracts, domain, application, adapters, packaging and docs follow the plan's waves.
+Service (domain, application, adapters), packaging (chart, Dockerfile, CI) and this documentation
+site are built on `develop` (PRs #2, #3 and the docs PR). Not yet done: first `develop` → `main`
+release and `warehouse-infra` registration (`docs/before-first-release.md` is the checklist).
+
+## Documentation
+
+The Docusaurus site in `docs/` carries the full pack: overview (introduction, business context,
+architecture, quickstart), the ddd-crew artifacts (bounded-context canvas, aggregate design
+canvas, domain events, ubiquitous language), the [ADR index](docs/adr/index.md), operations
+(configuration, runbook, observability, troubleshooting), the MCP tools page, and the API
+reference. It publishes to GitHub Pages at `https://iqvo.github.io/returns-processing/` on every
+push to `main` (`docs.yml`); pull requests build it as a check.
+
+- Build locally: `cd docs && npm ci && npm run build` (static site in `docs/build`).
+- The REST reference pages under `docs/docs/api-reference/rest/` are GENERATED from
+  `apis/openapi.yaml` (`npm run gen-api-docs` in `docs/`). Never edit them by hand: the
+  `docs-api-drift` CI job regenerates them and fails any PR where they differ from the spec.
+- ADRs live in `docs/adr/` and are served in place by the site; bodies are immutable — a changed
+  decision gets a new ADR.

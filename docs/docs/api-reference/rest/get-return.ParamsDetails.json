@@ -1,0 +1,1 @@
+{"parameters":[{"name":"rmaId","in":"path","required":true,"description":"The RMA id (`rma-` followed by a unique suffix, at most 64 characters).","schema":{"type":"string","minLength":6,"maxLength":64,"pattern":"^rma-[^\\s/]+$"},"example":"rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80"}]}
