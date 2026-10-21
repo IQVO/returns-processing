@@ -76,8 +76,10 @@ type OverrideInput struct {
 
 // Override creates a NEW Disposition superseding d, with a mandatory reason.
 // It carries the original's line, grade, quantity and policy version (the
-// version under discussion); a RESTOCK override raises its own
-// ReturnLineStaged.
+// version under discussion) and raises its own DispositionDecided with
+// supersedes and reason set — the event docs say every decision, policy or
+// override, raises one. A RESTOCK override stages the line through the
+// use case's Stage call, raising its own ReturnLineStaged.
 func (d *Disposition) Override(in OverrideInput) (*Disposition, error) {
 	if shared.IsBlank(in.Reason) {
 		return nil, ErrOverrideReasonRequired
@@ -92,7 +94,7 @@ func (d *Disposition) Override(in OverrideInput) (*Disposition, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Disposition{
+	over := &Disposition{
 		id:            id,
 		receiptID:     d.receiptID,
 		lineNo:        d.lineNo,
@@ -108,7 +110,9 @@ func (d *Disposition) Override(in OverrideInput) (*Disposition, error) {
 		receivedAt:    d.receivedAt,
 		decidedAt:     in.DecidedAt.UTC(),
 		version:       1,
-	}, nil
+	}
+	over.raise(over.decided(in.Outcome))
+	return over, nil
 }
 
 // Stage raises ReturnLineStaged for a RESTOCK disposition. It is the only
@@ -190,7 +194,17 @@ func (d *Disposition) raise(e Event) { d.events = append(d.events, e) }
 // ReturnLineStaged event in the same step (Stage on a fresh disposition
 // cannot fail; the error return keeps that an invariant, not a panic).
 func (d *Disposition) raiseDecision(outcome Outcome) error {
-	d.raise(DispositionDecided{
+	d.raise(d.decided(outcome))
+	if outcome != OutcomeRestock {
+		return nil
+	}
+	return d.Stage()
+}
+
+// decided builds the decision fact of d — raised by every decision, policy
+// or override (supersedes and reason are set only by an override).
+func (d *Disposition) decided(outcome Outcome) DispositionDecided {
+	return DispositionDecided{
 		Header:        Header{Disposition: d.id.String(), Version: d.version, At: d.decidedAt},
 		ReceiptID:     d.receiptID.String(),
 		LineNo:        d.lineNo,
@@ -202,11 +216,7 @@ func (d *Disposition) raiseDecision(outcome Outcome) error {
 		Supersedes:    d.supersedes.String(),
 		Reason:        d.reason,
 		DecidedAt:     d.decidedAt,
-	})
-	if outcome != OutcomeRestock {
-		return nil
 	}
-	return d.Stage()
 }
 
 // fill validates the line decision and populates the aggregate.

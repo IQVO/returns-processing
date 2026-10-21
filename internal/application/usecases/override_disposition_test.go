@@ -52,10 +52,11 @@ func TestOverrideDisposition_Explained(t *testing.T) {
 	if err != nil || latest.ID() != over.ID() {
 		t.Fatalf("latest err=%v id=%s", err, latest.ID())
 	}
-	if names := f.events.DispositionEventNames(); len(names) != 2 {
-		// decidedOnce published DispositionDecided + ReturnLineStaged (grade A
-		// restocks under the standard policy); the RTV override added none.
-		t.Fatalf("non-restock override published extra facts: %v", names)
+	// decidedOnce published DispositionDecided + ReturnLineStaged (grade A
+	// restocks under the standard policy); the RTV override published its own
+	// DispositionDecided (supersedes + reason set) and staged nothing.
+	if names := f.events.DispositionEventNames(); len(names) != 3 || names[2] != "DispositionDecided" {
+		t.Fatalf("override events = %v", names)
 	}
 }
 
@@ -74,9 +75,9 @@ func TestOverrideDisposition_RestockStages(t *testing.T) {
 		t.Fatal("restock override did not stage")
 	}
 	// decidedOnce published DispositionDecided + ReturnLineStaged; the
-	// override adds exactly one more staging on its own disposition id.
-	if names := f.events.DispositionEventNames(); len(names) != 3 || names[2] != "ReturnLineStaged" {
-		t.Fatalf("events = %v, want two from the decision plus one staging", names)
+	// override adds its own decided fact plus one staging on its own id.
+	if names := f.events.DispositionEventNames(); len(names) != 4 || names[2] != "DispositionDecided" || names[3] != "ReturnLineStaged" {
+		t.Fatalf("events = %v, want the decision's two facts plus the override's decided+staging", names)
 	}
 }
 
