@@ -106,9 +106,9 @@ func brokersFromEnv() []string {
 }
 
 // consumerGroups are the pinned consumer group env names of
-// .claude/rules/integration-events.md (one per consumed topic; the consumers
-// themselves are a later step — the ids are read now so a deployment missing
-// one fails at boot).
+// .claude/rules/integration-events.md (one per consumed topic). startConsumers
+// spends them; loadBootConfig required them long before, so a deployment
+// missing one fails at boot.
 var consumerGroupEnvs = []string{
 	"PRODUCT_CLASSIFICATION_CONSUMER_GROUP",
 	"ORDER_LINES_CONSUMER_GROUP",

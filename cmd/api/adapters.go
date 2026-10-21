@@ -28,6 +28,14 @@ type adapters struct {
 	uow        ports.UnitOfWork
 	clock      ports.Clock
 	ids        ports.IDGen
+	// The consumer-side feeds of the three local copies and the id-dedupe
+	// guard. They are the SAME Postgres objects as the read ports above —
+	// one row per key is both written by a consumer and read by a use case
+	// — held at the feed types because that is all the consumers need.
+	classFeed ports.ProductClassFeed
+	lineFeed  ports.AllocatedLineFeed
+	unitFeed  ports.ManifestedUnitFeed
+	processed ports.ProcessedEvents
 	// idempotency is the Idempotency-Key middleware of the writes.
 	idempotency func(http.Handler) http.Handler
 	// ping is the Postgres liveness check behind /readyz.
@@ -38,14 +46,21 @@ type adapters struct {
 // transactional outbox, the unit of work, the idempotency store, the wall
 // clock and the uuid id generator.
 func buildAdapters(pool *pgxpool.Pool) adapters {
+	allocated := postgres.NewAllocatedLines(pool)
+	manifested := postgres.NewManifestedUnits(pool)
+	classes := postgres.NewProductClasses(pool)
 	ad := adapters{
 		rmas:       postgres.NewRMAs(pool),
 		receipts:   postgres.NewReceipts(pool),
 		dispos:     postgres.NewDispositions(pool),
 		policies:   postgres.NewPolicies(pool),
-		allocated:  postgres.NewAllocatedLines(pool),
-		manifested: postgres.NewManifestedUnits(pool),
-		classes:    postgres.NewProductClasses(pool),
+		allocated:  allocated,
+		manifested: manifested,
+		classes:    classes,
+		classFeed:  classes,
+		lineFeed:   allocated,
+		unitFeed:   manifested,
+		processed:  postgres.NewProcessedEvents(pool),
 		events:     postgres.NewOutbox(pool),
 		uow:        postgres.NewUnitOfWork(pool),
 		clock:      postgres.NewClock(),

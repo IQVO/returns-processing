@@ -3,9 +3,9 @@
 // The real-wiring proof of the shipped composition root: the test boots the
 // REAL entry point (run, in-process) against testcontainers Postgres and
 // Kafka with nothing but the environment a deployment sets, and drives it
-// only through HTTP and Kafka. It reads effects from Postgres. The two
-// local-copy rows are seeded with SQL because the consumers that would feed
-// them are a later step — everything else is the live path.
+// only through HTTP and Kafka. It reads effects from Postgres. The local
+// copies are fed by the REAL consumers from the producers' exact events on
+// the consumed topics — everything is the live path.
 //
 // The test broker has topic auto-creation OFF so the test controls when each
 // topic appears (the cluster broker auto-creates topics on first write, the
@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	ce "github.com/cloudevents/sdk-go/v2/event"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/testcontainers/testcontainers-go"
 	tckafka "github.com/testcontainers/testcontainers-go/modules/kafka"
@@ -41,11 +42,43 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// Topic names and types of this service's world (ADR 0004).
+// Topic names and types of this service's world (ADR 0004 + the consumed
+// contracts of .claude/rules/integration-events.md).
 const (
 	topicEvents    = "warehouse.returns-processing.events"
 	typeAuthorized = "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized"
+
+	topicOrderMgmt = "warehouse.order-management.events"
+	topicFulfill   = "warehouse.fulfillment.events"
+	// The exact producer type strings the consumers dispatch on.
+	typeOrderAllocated    = "com.warehouse.wes.order-management.order.OrderAllocated"
+	typePackageManifested = "com.warehouse.wes.fulfillment-execution.package.PackageManifested"
 )
+
+// cloudEvent builds a valid CloudEvents 1.0 envelope of a CONSUMED type (the
+// producer's source and type strings), and produce publishes the envelopes on
+// topic — the shape order-management and fulfillment-execution really send.
+func cloudEvent(t *testing.T, id, source, typ, subject string, data any) kafkatest.Message {
+	t.Helper()
+	e := ce.New(ce.CloudEventsVersionV1)
+	e.SetID(id)
+	e.SetSource(source)
+	e.SetType(typ)
+	e.SetSubject(subject)
+	e.SetTime(time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC))
+	e.SetDataSchema("urn:warehouse:consumed:" + typ + ":v1")
+	if err := e.SetData("application/json", data); err != nil {
+		t.Fatalf("set data: %v", err)
+	}
+	if err := e.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	value, err := json.Marshal(e)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return kafkatest.Message{Key: subject, Value: value}
+}
 
 // freeAddr returns an address on an open port (listener closed at once).
 func freeAddr() string {
@@ -286,24 +319,27 @@ func TestRealEntryPointRunsOnRealPostgresAndKafka(t *testing.T) {
 		}
 	})
 
-	// The consumers (a later step) would feed these copies from
-	// product-master / order-management / fulfillment-execution events.
-	seed := func(orderID, sku string) {
-		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_, err := pool.Exec(ctx, `INSERT INTO allocated_lines (order_id, line_no, sku) VALUES ($1, 1, $2)`, orderID, sku)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = pool.Exec(ctx, `INSERT INTO manifested_units (work_unit, order_id, line_no, package_id, manifested_at)
-			VALUES ($1 || '-line-1', $1, 1, 'pkg-' || $1, now())`, orderID)
-		if err != nil {
-			t.Fatal(err)
-		}
+	// The consumers feed the local copies the authorize path reads: create
+	// the consumed topics explicitly (the test broker has auto-creation OFF)
+	// and publish the producers' exact events — the same path production
+	// takes, REST in only for the authorize itself.
+	kafkatest.CreateTopic(t, topicOrderMgmt)
+	kafkatest.CreateTopic(t, topicFulfill)
+	for _, line := range []struct{ order, sku string }{{"ord-e2e", "SKU-1"}, {"ord-race", "SKU-2"}} {
+		kafkatest.Produce(t, topicOrderMgmt, cloudEvent(t,
+			"alloc-"+line.order, "/warehouse/order-management", typeOrderAllocated, line.order,
+			map[string]any{"order_id": line.order, "promise_date": "2026-11-21T10:01:00Z",
+				"lines": []map[string]any{{"line_no": 1, "sku": line.sku, "path_id": "pick"}}}))
+		kafkatest.Produce(t, topicFulfill, cloudEvent(t,
+			"manifest-"+line.order, "/warehouse/fulfillment-execution", typePackageManifested, line.order+"-line-1",
+			map[string]any{"package_id": "pkg-" + line.order, "order_ref": line.order + "-line-1"}))
 	}
-	seed("ord-e2e", "SKU-1")
-	seed("ord-race", "SKU-2")
+	waitFor(t, 90*time.Second, "the consumers to feed the local copies", func() bool {
+		return pgtest.Count(t, pool, "allocated_lines") == 2 && pgtest.Count(t, pool, "manifested_units") == 2
+	})
+	if n := pgtest.Count(t, pool, "processed_events"); n != 4 {
+		t.Fatalf("processed_events = %d, want 4 (one claim per consumed event)", n)
+	}
 
 	t.Run("authorize publishes the golden envelope through the relay", func(t *testing.T) {
 		raw := s.call(http.MethodPost, "/returns",
