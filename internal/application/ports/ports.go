@@ -138,6 +138,49 @@ type ProductClasses interface {
 	Get(sku string) (views.ProductClass, bool)
 }
 
+// ProcessedEvents is the inbound consumers' idempotency guard, the fleet's
+// dedupe rule: a consumed CloudEvent's id is claimed in the SAME unit of
+// work as its effect, so the two commit or roll back together and a
+// redelivery after a rollback is processed, not skipped.
+type ProcessedEvents interface {
+	// Claim records eventID as processed and reports whether THIS call
+	// claimed it first (false = a duplicate redelivery). Inside a
+	// UnitOfWork it joins the transaction carried in ctx.
+	Claim(ctx context.Context, eventID string) (bool, error)
+}
+
+// ProductClassFeed is the write side of the classification local copy
+// (ADR 0003): the product-master consumer applies one classification per
+// ProductClassified fact. It is the same Postgres object the Get port
+// reads; the application states them apart so the consumer and the use
+// cases depend on exactly the half each needs.
+type ProductClassFeed interface {
+	// ApplyProductClass upserts the SKU's classification. Only a NEWER
+	// version takes effect — the LOCAL COPY RULE of the contracts
+	// (ProductClassified carries a version; a replayed old version must
+	// not overwrite a newer copy).
+	ApplyProductClass(ctx context.Context, sku string, pc views.ProductClass) error
+}
+
+// AllocatedLineFeed is the write side of the allocations local copy
+// (ADR 0003): the order-management consumer applies every allocated line of
+// one OrderAllocated / OrderPartiallyAllocated fact.
+type AllocatedLineFeed interface {
+	// ApplyAllocatedLine upserts one allocated order line. The sources
+	// carry no version, so a newer fact is last-write-wins and the local
+	// version counter just bumps.
+	ApplyAllocatedLine(ctx context.Context, orderID string, lineNo int32, sku string) error
+}
+
+// ManifestedUnitFeed is the write side of the package-manifest local copy
+// (ADR 0003): the fulfillment-execution consumer applies one manifested work
+// unit per PackageManifested fact.
+type ManifestedUnitFeed interface {
+	// ApplyManifestedUnit upserts the manifested work unit of orderID's
+	// lineNo, keyed by the WES work-unit id `{order_id}-line-{line_no}`.
+	ApplyManifestedUnit(ctx context.Context, orderID string, lineNo int32, unit views.ManifestedUnit) error
+}
+
 // IDGen mints aggregate ids. The real generator's shape (prefixed, sortable)
 // is an adapter concern; use cases only need a fresh unique string per
 // aggregate kind.

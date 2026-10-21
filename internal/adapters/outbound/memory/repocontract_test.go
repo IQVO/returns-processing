@@ -44,6 +44,12 @@ func TestIdempotencyStoreContract(t *testing.T) {
 	})
 }
 
+func TestProcessedEventsContract(t *testing.T) {
+	repocontract.ProcessedEvents(t, func(t *testing.T) ports.ProcessedEvents {
+		return memory.NewProcessedEvents()
+	})
+}
+
 func TestAllocatedLinesContract(t *testing.T) {
 	repocontract.AllocatedLines(t, func(t *testing.T) repocontract.AllocatedLinesSeeds {
 		return &memoryAllocated{memory.NewAllocatedLines()}

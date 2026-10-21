@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"strconv"
 	"sync"
 
@@ -27,6 +28,13 @@ func (a *AllocatedLines) Put(orderID string, lineNo int32, line views.AllocatedL
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.lines[lineKey(orderID, lineNo)] = line
+}
+
+// ApplyAllocatedLine implements ports.AllocatedLineFeed: the consumer-side
+// write of the copy. It is Put (the double has no transaction to join).
+func (a *AllocatedLines) ApplyAllocatedLine(_ context.Context, orderID string, lineNo int32, sku string) error {
+	a.Put(orderID, lineNo, views.AllocatedLine{SKU: sku})
+	return nil
 }
 
 // Get returns the allocated line, or ok=false.
@@ -70,6 +78,14 @@ func (m *ManifestedUnits) PutByOrderLine(orderID string, lineNo int32, unit view
 	}
 }
 
+// ApplyManifestedUnit implements ports.ManifestedUnitFeed: the consumer-side
+// write of the copy. It is PutByOrderLine (the double has no transaction to
+// join).
+func (m *ManifestedUnits) ApplyManifestedUnit(_ context.Context, orderID string, lineNo int32, unit views.ManifestedUnit) error {
+	m.PutByOrderLine(orderID, lineNo, unit)
+	return nil
+}
+
 // GetByOrderLine returns the line's manifested unit, or ok=false.
 func (m *ManifestedUnits) GetByOrderLine(orderID string, lineNo int32) (views.ManifestedUnit, bool) {
 	m.mu.Lock()
@@ -108,6 +124,15 @@ func (p *ProductClasses) Put(sku string, pc views.ProductClass) {
 		return
 	}
 	p.bySKU[sku] = pc
+}
+
+// ApplyProductClass implements ports.ProductClassFeed: the consumer-side
+// write of the copy. It is Put, which applies the same NEWER-version-only
+// rule the Postgres upsert guards by (the double has no transaction to
+// join).
+func (p *ProductClasses) ApplyProductClass(_ context.Context, sku string, pc views.ProductClass) error {
+	p.Put(sku, pc)
+	return nil
 }
 
 // Get returns the SKU's classification, or ok=false.
