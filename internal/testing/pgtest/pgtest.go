@@ -160,6 +160,17 @@ func Count(t *testing.T, pool *pgxpool.Pool, table string) int {
 	return n
 }
 
+// Scan runs a scalar-or-tuple query and scans the row into dest (a count
+// with a WHERE, a column of one row, ...). No rows is a test failure.
+func Scan(t *testing.T, pool *pgxpool.Pool, query string, args []any, dest ...any) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := pool.QueryRow(ctx, query, args...).Scan(dest...); err != nil {
+		t.Fatalf("scan %q: %v", query, err)
+	}
+}
+
 // Shutdown terminates the shared container; call it from TestMain.
 func Shutdown() {
 	if container != nil {

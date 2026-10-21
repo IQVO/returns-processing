@@ -27,17 +27,27 @@ type MetadataClient interface {
 // null list that means "all topics"), so the answer is small and asking never
 // creates a topic (kafka-go's Client.Metadata does not set
 // AllowAutoTopicCreation).
+//
+// Every Check dials through a THROWAWAY Transport: kafka-go serves metadata
+// requests from the transport's cache once it is warm (transport.go: "we
+// serve metadata requests directly from the transport cache"), and every
+// Client without its own Transport shares the process-wide DefaultTransport —
+// so a cached client keeps answering "reachable" after the broker died
+// (proven against a stopped testcontainer). A readiness probe must dial for
+// real each round.
 type BrokerCheck struct {
+	brokers []string
+	// client, when set (unit tests), replaces the real dial.
 	client MetadataClient
 }
 
 // NewBrokerCheck builds the check over brokers. It does not dial.
 func NewBrokerCheck(brokers []string) *BrokerCheck {
-	return NewBrokerCheckWithClient(&kafkago.Client{Addr: kafkago.TCP(brokers...)})
+	return &BrokerCheck{brokers: brokers}
 }
 
-// NewBrokerCheckWithClient builds the check over an explicit client (a fake in
-// tests).
+// NewBrokerCheckWithClient builds the check over an explicit client (a fake
+// in tests).
 func NewBrokerCheckWithClient(c MetadataClient) *BrokerCheck {
 	return &BrokerCheck{client: c}
 }
@@ -45,7 +55,13 @@ func NewBrokerCheckWithClient(c MetadataClient) *BrokerCheck {
 // Check returns nil when a broker answered a topic-less metadata request;
 // otherwise an error. ctx bounds the round trip.
 func (b *BrokerCheck) Check(ctx context.Context) error {
-	resp, err := b.client.Metadata(ctx, &kafkago.MetadataRequest{Topics: []string{}})
+	client := b.client
+	if client == nil {
+		transport := &kafkago.Transport{}
+		defer transport.CloseIdleConnections()
+		client = &kafkago.Client{Addr: kafkago.TCP(b.brokers...), Transport: transport}
+	}
+	resp, err := client.Metadata(ctx, &kafkago.MetadataRequest{Topics: []string{}})
 	if err != nil {
 		return fmt.Errorf("kafka metadata: %w", err)
 	}
