@@ -13,9 +13,12 @@ stops being true.
 
 Components: api (always), mcp (default off; the read-only MCP server of
 cmd/mcp: get_return, list_returns_by_order, get_disposition_policy over
-Streamable HTTP) and frontend (default off; the returns_mfe Module
-Federation remote from web/, static nginx). The enabled render runs all
-three TOGETHER.
+Streamable HTTP), analytics (default off; the ADR 0007 read side --
+cmd/returns-projector, the analytical database's only writer, and
+cmd/returns-reports, the read-only :8092; the projector gets NO Service,
+its :8091 is probes only) and frontend (default off; the returns_mfe Module
+Federation remote from web/, static nginx). The enabled render runs all of
+them TOGETHER.
 
 It also asserts the ADR 0001 runtime: the mandatory env is rendered and no
 *_MODE variable ever is.
@@ -44,6 +47,9 @@ ENABLE_EVERYTHING = BASE + [
     "--set", "config.shutdownDrainDelay=5s",
     "--set", "mcp.enabled=true",
     "--set", "frontend.enabled=true",
+    "--set", "analytics.enabled=true",
+    "--set", "analytics.url=postgres://u@example.invalid:5432/analytics",
+    "--set", "analytics.consumerGroup=returns-processing-analytics",
 ]
 
 # Every env var cmd/api reads that has a dedicated chart value.
@@ -103,13 +109,26 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
     services = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Service"}
     deployments = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Deployment"}
 
-    expected = {RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-frontend"}
-    if set(deployments) != expected:
-        failures.append(f"expected Deployments {sorted(expected)}, got {sorted(deployments)}")
-    if set(services) != expected:
-        failures.append(f"expected a Service per Deployment, got {sorted(services)}")
+    expected_deployments = {
+        RELEASE,
+        f"{RELEASE}-mcp",
+        f"{RELEASE}-frontend",
+        f"{RELEASE}-projector",
+        f"{RELEASE}-reports",
+    }
+    # The projector gets NO Service: its :8091 admin port is probes only.
+    expected_services = {RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-frontend", f"{RELEASE}-reports"}
+    if set(deployments) != expected_deployments:
+        failures.append(f"expected Deployments {sorted(expected_deployments)}, got {sorted(deployments)}")
+    if set(services) != expected_services:
+        failures.append(f"expected a Service per exposed Deployment, got {sorted(services)}")
 
-    for name, component in ((RELEASE, "api"), (f"{RELEASE}-mcp", "mcp"), (f"{RELEASE}-frontend", "frontend")):
+    for name, component in (
+        (RELEASE, "api"),
+        (f"{RELEASE}-mcp", "mcp"),
+        (f"{RELEASE}-frontend", "frontend"),
+        (f"{RELEASE}-reports", "analytics-reports"),
+    ):
         if name in services and selector_of(services[name]).get("app.kubernetes.io/component") != component:
             failures.append(f"Service {name} selector must pin component={component}")
         if name in deployments:
@@ -144,6 +163,7 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
 
     check_env(deployments.get(RELEASE), failures)
     check_mcp(deployments.get(f"{RELEASE}-mcp"), failures)
+    check_analytics(deployments.get(f"{RELEASE}-projector"), deployments.get(f"{RELEASE}-reports"), failures)
     check_frontend(deployments.get(f"{RELEASE}-frontend"), failures)
 
 
@@ -193,6 +213,45 @@ def check_mcp(dep: dict | None, failures: list[str]) -> None:
             failures.append(f"the MCP Deployment does not render {want}")
 
 
+def check_analytics(projector: dict | None, reports: dict | None, failures: list[str]) -> None:
+    """The ADR 0007 read side: the projector is the analytical database's
+    only writer (analytics topic + admin probes); the reports binary is
+    read-only (never dials Kafka, never opens the OLTP database)."""
+    if projector is None or reports is None:
+        failures.append("the analytics Deployments were not rendered")
+        return
+    if command_of(projector) != ["/app/returns-projector"]:
+        failures.append("the projector Deployment must run /app/returns-projector")
+    if command_of(reports) != ["/app/returns-reports"]:
+        failures.append("the reports Deployment must run /app/returns-reports")
+    prj_env = set(env_names(projector))
+    for want in ("ANALYTICS_DATABASE_URL", "KAFKA_BROKERS", "ANALYTICS_CONSUMER_GROUP", "ADMIN_ADDR", "LOG_LEVEL"):
+        if want not in prj_env:
+            failures.append(f"the projector Deployment does not render {want}")
+    # No OLTP credentials or api consumer groups on the projector.
+    stray = {"DATABASE_URL", "MIGRATIONS_DATABASE_URL", *FORBIDDEN_ENV,
+             "PRODUCT_CLASSIFICATION_CONSUMER_GROUP", "ORDER_LINES_CONSUMER_GROUP", "MANIFEST_CONSUMER_GROUP"} & prj_env
+    if stray:
+        failures.append(f"the projector Deployment must not get OLTP env: {sorted(stray)}")
+    rep_env = set(env_names(reports))
+    for want in ("ANALYTICS_DATABASE_URL", "HTTP_ADDR", "LOG_LEVEL"):
+        if want not in rep_env:
+            failures.append(f"the reports Deployment does not render {want}")
+    stray = {
+        "KAFKA_BROKERS", "DATABASE_URL", "MIGRATIONS_DATABASE_URL",
+        "PRODUCT_CLASSIFICATION_CONSUMER_GROUP", "ORDER_LINES_CONSUMER_GROUP", "MANIFEST_CONSUMER_GROUP",
+        *FORBIDDEN_ENV,
+    } & rep_env
+    if stray:
+        failures.append(f"the reports Deployment must not get Kafka/OLTP env (read-only): {sorted(stray)}")
+    # The projector's readiness flips at shutdown; both probe /healthz.
+    for dep, name in ((projector, "projector"), (reports, "reports")):
+        probes = dep["spec"]["template"]["spec"]["containers"][0]
+        liveness = probes.get("livenessProbe", {}).get("httpGet", {}).get("path")
+        if liveness != "/healthz":
+            failures.append(f"the {name} livenessProbe must hit /healthz")
+
+
 def check_frontend(dep: dict | None, failures: list[str]) -> None:
     """The frontend is a static nginx pod: no env from this chart's runtime at
     all (its API origin is read at runtime from the console's /config.json)."""
@@ -209,7 +268,7 @@ def check_defaults(failures: list[str]) -> None:
     """Default values deploy the api only."""
     defaults = render(BASE)
     stray = [d["metadata"]["name"] for d in defaults
-             if d["metadata"]["name"].endswith(("-mcp", "-frontend"))]
+             if d["metadata"]["name"].endswith(("-mcp", "-frontend", "-projector", "-reports"))]
     if stray:
         failures.append(f"optional components rendered with default values: {stray}")
     kinds = sorted(d["kind"] for d in defaults if d["kind"] in {"Deployment", "Service"})
@@ -236,6 +295,11 @@ def check_refusals(failures: list[str]) -> None:
         ("an empty manifest group", BASE + ["--set", "config.manifestConsumerGroup="], "config.manifestConsumerGroup"),
         ("a *_MODE variable through extraEnv",
          BASE + ["--set", "extraEnv[0].name=MANIFEST_MODE", "--set", "extraEnv[0].value=permissive"], "MANIFEST_MODE"),
+        ("analytics without a DSN source",
+         BASE + ["--set", "analytics.enabled=true"], "analytics.url nor analytics.existingSecret"),
+        ("analytics with an empty consumer group",
+         BASE + ["--set", "analytics.enabled=true", "--set", "analytics.url=postgres://u@h/analytics",
+                 "--set", "analytics.consumerGroup="], "analytics.consumerGroup"),
     ):
         result = helm_template(args)
         if result.returncode == 0 or needle not in result.stderr:
@@ -254,10 +318,11 @@ def main() -> int:
             print(f"FAIL: {f}")
         return 1
 
-    print("PASS: every Service selects exactly one Deployment (api, mcp, frontend); mcp and frontend "
-          "are off by default; every cmd/api env var has a dedicated value and no *_MODE is rendered; "
-          "the frontend renders no env; the chart refuses to render without a database source, without "
-          "brokers, with an empty consumer group or with a *_MODE injected through extraEnv")
+    print("PASS: every Service selects exactly one Deployment (api, mcp, analytics-reports, frontend); mcp, "
+          "analytics and frontend are off by default; every cmd/api env var has a dedicated value and no *_MODE "
+          "is rendered; the projector never gets OLTP env and the reports never dial Kafka; the frontend renders "
+          "no env; the chart refuses to render without a database source, without brokers, with an empty consumer "
+          "group or with a *_MODE injected through extraEnv")
     return 0
 
 
