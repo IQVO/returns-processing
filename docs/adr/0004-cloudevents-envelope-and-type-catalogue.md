@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-10-21).
+Accepted (2026-10-21). Amended (2026-10-22): the analytics mirror shipped,
+carrying the same `type` and `id` per occurrence, consumed by this service's
+own projector ([ADR 0007](0007-analytics-read-side.md)).
 
 ## Context
 

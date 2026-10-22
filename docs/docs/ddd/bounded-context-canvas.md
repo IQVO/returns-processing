@@ -32,7 +32,7 @@ flowchart LR
     subgraph OUT["Outbound"]
         inv["inventory-storage<br/>(staged-receipt use case)"]:::ctx
         exc["exception-management<br/>(problem-solve case)"]:::ctx
-        ana["analytics topic (no consumer)"]:::planned
+        ana["analytics topic →<br/>own projector (ADR 0007)"]:::ctx
     end
     ops -->|"REST: authorize, receive,<br/>inspect, override, policy"| core
     ops -.->|"REST reads"| core
@@ -46,8 +46,8 @@ flowchart LR
 ```
 
 Source: `internal/adapters/inbound/{http,mcp}`, `internal/adapters/inbound/kafka/*`,
-`internal/adapters/outbound/kafka/encoder.go`, ADR 0001's canvas. Dashed boxes are edges with no
-consumer or caller yet; the analytics mirror is **planned, not built** (ADR 0004).
+`internal/adapters/outbound/kafka/encoder.go`, ADR 0001's canvas. The analytics mirror feeds the
+service's OWN projector and reports, not a sibling ([ADR 0007](/docs/adr/0007-analytics-read-side)).
 
 ## Name
 
@@ -109,7 +109,9 @@ receipt nor lost.
 
 All messages are CloudEvents 1.0 structured mode and leave through the transactional outbox
 ([ADR 0005](/docs/adr/0005-transactional-outbox-and-relay)). The analytics mirror
-(`warehouse.returns-processing.analytics`) is planned, not built.
+(`warehouse.returns-processing.analytics`) is built: the relay writes it in the
+same outbox pass and this service's own projector consumes it
+([ADR 0007](/docs/adr/0007-analytics-read-side)).
 
 ## Ubiquitous language
 

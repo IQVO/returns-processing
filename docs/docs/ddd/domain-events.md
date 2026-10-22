@@ -51,7 +51,8 @@ case (its ADR 0044), and `disposition_id` is the downstream idempotency key.
 override. A breaking payload change is a new `.v2` type and dataschema, never a mutation of v1.
 
 An analytics mirror (`warehouse.returns-processing.analytics`, same `type` and `id` per occurrence)
-is **planned, not built** — declared in the contract, no consumer exists.
+is **built** ([ADR 0007](/docs/adr/0007-analytics-read-side)): the relay writes both messages in
+one pass and the service's own projector is the consumer.
 
 Consumers of the published events, checked on each sibling's `origin/develop` (2026-10-21):
 inventory-storage consumes `ReturnLineStaged` (built, its ADR 0044); exception-management consumes
