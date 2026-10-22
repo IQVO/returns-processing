@@ -50,6 +50,40 @@ service:
   port: 80
   targetPort: 8080
 
+# --- Gateway API (the OLTP route through Kong) ---
+# Fleet decision (2026-10-13): ALL Kong configuration — routes AND plugins —
+# belongs to the application's Helm chart, not warehouse-infra Terraform
+# (chart-rendered objects are Helm/ArgoCD reconciled forever). This route
+# exposes the api Service at /api/returns-processing on the platform
+# Gateway, prefix stripped (the service serves /returns, /dispositions ...
+# at the root). Off by default: warehouse-infra enables it with the real
+# parentRefs (the platform Gateway) and path.
+gatewayApi:
+  enabled: false
+  parentRefs:
+    - name: ""
+      namespace: ""
+      sectionName: "http"
+  hosts:
+    - path: /
+      pathType: PathPrefix
+  stripPath: true
+
+# Kong plugins rendered by THIS chart (kong-plugins.yaml) and attached to the
+# HTTPRoute above (and the MCP route) via the konghq.com/plugins annotation.
+# Defaults off; warehouse-infra's values switch them on (prometheus so the
+# Kong metrics rows light up, opentelemetry for traces, cors for the split
+# localhost edge). NO auth plugin here, ever.
+kongPlugins:
+  cors:
+    enabled: false
+    origin: "http://localhost"
+  prometheus:
+    enabled: false
+  opentelemetry:
+    enabled: false
+    tracesEndpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
+
 resources:
   limits:
     cpu: 500m
@@ -175,6 +209,16 @@ mcp:
     type: ClusterIP
     port: 8090
     targetPort: 8090
+  # Kong exposure of the MCP server (mcp-route.yaml): host path
+  # /api/mcp/returns-processing rewritten to the SDK's /mcp endpoint.
+  # Off by default; warehouse-infra turns it on with the real parentRefs.
+  route:
+    enabled: false
+    path: "/api/mcp/returns-processing"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
   extraEnv: []
   resources:
     limits:

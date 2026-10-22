@@ -198,3 +198,19 @@ at render time, only while analytics is on, naming the value.
 {{- end -}}
 {{- $_ := required "analytics.enabled is true but analytics.consumerGroup is empty: the projector exits at boot without ANALYTICS_CONSUMER_GROUP, a stable Kafka group id (ADR 0007)." .Values.analytics.consumerGroup -}}
 {{- end -}}
+
+{{/*
+Comma-joined names of this chart's enabled KongPlugins, for the
+konghq.com/plugins annotation on the HTTPRoutes this chart renders
+(httproute.yaml, mcp-route.yaml). Empty string (annotation omitted) when
+none are enabled.
+*/}}
+{{- define "returns-processing.kongPluginNames" -}}
+{{- $names := list -}}
+{{- range $name, $cfg := .Values.kongPlugins -}}
+{{- if $cfg.enabled -}}
+{{- $names = append $names (printf "%s-%s" (include "returns-processing.fullname" $) $name) -}}
+{{- end -}}
+{{- end -}}
+{{- join "," $names -}}
+{{- end -}}
