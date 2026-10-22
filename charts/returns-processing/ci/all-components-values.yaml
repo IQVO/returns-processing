@@ -15,6 +15,32 @@ config:
   manifestConsumerGroup: "returns-processing-manifest"
 mcp:
   enabled: true
+  route:
+    enabled: true
+    parentRefs:
+      - name: warehouse-gateway
+        namespace: kong
+        sectionName: http
+
+# The Gateway API route + Kong plugins on as well, with the real host path
+# and parent (the same values warehouse-infra sets in production).
+gatewayApi:
+  enabled: true
+  parentRefs:
+    - name: warehouse-gateway
+      namespace: kong
+      sectionName: http
+  hosts:
+    - path: /api/returns-processing
+      pathType: PathPrefix
+kongPlugins:
+  cors:
+    enabled: true
+    origin: "http://localhost"
+  prometheus:
+    enabled: true
+  opentelemetry:
+    enabled: true
 analytics:
   enabled: true
   existingSecret: "returns-processing-analytics-db"

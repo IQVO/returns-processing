@@ -286,4 +286,38 @@ for component in api mcp frontend analytics-projector analytics-reports; do
   grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "$component was not rendered when every component is enabled"
 done
 
+# --- the Gateway API routes + Kong plugins (fleet decision 2026-10-13) ------
+# Off by default: standalone installs without Kong are unaffected.
+if grep -q 'kind: HTTPRoute' <<<"$default_render"; then
+  fail "an HTTPRoute must not render by default (gatewayApi.enabled is false)"
+fi
+if grep -q 'kind: KongPlugin' <<<"$default_render"; then
+  fail "a KongPlugin must not render by default (every kongPlugins.*.enabled is false)"
+fi
+# The mcp route stays off until mcp.route.enabled, even with mcp on.
+if render_only mcp-route.yaml "${base[@]}" --set mcp.enabled=true 2>&1 | grep -q 'kind: HTTPRoute'; then
+  fail "the mcp route must stay off until mcp.route.enabled"
+fi
+# With everything on (ct lint's values file): the api route strips
+# /api/returns-processing, the mcp route rewrites to /mcp and both carry
+# the konghq.com/plugins annotation naming three rendered KongPlugins (the
+# deep contract — forbidden plugins, cors headers, backends — is
+# tests/test_kong_config.py).
+route="$(render_only httproute.yaml "${everything[@]}")"
+grep -q 'kind: HTTPRoute' <<<"$route" || fail "httproute.yaml does not render with gatewayApi.enabled=true"
+grep -q 'value: /api/returns-processing' <<<"$route" || fail "the api HTTPRoute does not match /api/returns-processing"
+grep -q 'replacePrefixMatch: /' <<<"$route" || fail "the api HTTPRoute does not strip its prefix"
+grep -q 'konghq.com/plugins:' <<<"$route" || fail "the api HTTPRoute has no konghq.com/plugins annotation"
+mcp_route="$(render_only mcp-route.yaml "${everything[@]}")"
+grep -q 'value: /api/mcp/returns-processing' <<<"$mcp_route" || fail "the mcp HTTPRoute does not match /api/mcp/returns-processing"
+grep -q 'replacePrefixMatch: /mcp' <<<"$mcp_route" || fail "the mcp HTTPRoute does not rewrite to /mcp"
+grep -q "name: $release-mcp" <<<"$mcp_route" || fail "the mcp HTTPRoute does not target the -mcp Service"
+plugins="$(render_only kong-plugins.yaml "${everything[@]}")"
+for plugin in cors prometheus opentelemetry; do
+  grep -q "plugin: $plugin" <<<"$plugins" || fail "the $plugin KongPlugin does not render when enabled"
+done
+if grep -q 'origins:\s*$' <<<"$plugins" && grep -A1 'origins:' <<<"$plugins" | grep -q '\*'; then
+  fail "the cors plugin must never allow origin '*' (endpoints are unauthenticated)"
+fi
+
 echo "PASS: returns-processing chart render assertions"
