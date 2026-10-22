@@ -1,0 +1,19 @@
+{
+  "specversion": "1.0",
+  "id": "0f5c3a92-7d41-4b6e-8c2f-1a9b8d3e5f42",
+  "source": "/warehouse/returns-processing",
+  "type": "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorizationRejected",
+  "subject": "rma-2",
+  "time": "2026-10-21T09:31:00Z",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:warehouse:returns-processing:analytics:ReturnAuthorizationRejected:v1",
+  "data": {
+    "rma_id": "rma-2",
+    "order_id": "ord-7c9e",
+    "line_no": 4,
+    "sku": "SKU-9",
+    "quantity": 5,
+    "rejection_code": "LINE_NOT_MANIFESTED",
+    "rejected_at": "2026-10-21T09:31:00Z"
+  }
+}

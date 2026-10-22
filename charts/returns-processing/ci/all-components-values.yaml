@@ -1,6 +1,6 @@
 # Used by `helm lint` / `ct lint`: every optional value and component set at
-# once (api + mcp + frontend), so a template that renders alone but collides
-# with another is caught by `helm lint`.
+# once (api + mcp + analytics projector/reports + frontend), so a template
+# that renders alone but collides with another is caught by `helm lint`.
 database:
   existingSecret: "returns-processing-db"
 kafka:
@@ -15,5 +15,9 @@ config:
   manifestConsumerGroup: "returns-processing-manifest"
 mcp:
   enabled: true
+analytics:
+  enabled: true
+  existingSecret: "returns-processing-analytics-db"
+  consumerGroup: "returns-processing-analytics"
 frontend:
   enabled: true

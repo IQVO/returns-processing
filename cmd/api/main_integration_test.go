@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 // contracts of .claude/rules/integration-events.md).
 const (
 	topicEvents    = "warehouse.returns-processing.events"
+	topicAnalytics = "warehouse.returns-processing.analytics"
 	typeAuthorized = "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized"
 
 	topicOrderMgmt = "warehouse.order-management.events"
@@ -274,8 +275,11 @@ func TestRealEntryPointRunsOnRealPostgresAndKafka(t *testing.T) {
 			t.Fatalf("readyz with every topic missing = %d %s, want 200 ready", status, body)
 		}
 		// The test broker has auto-creation OFF: create the topic explicitly,
-		// as the cluster broker would on the service's first write.
+		// as the cluster broker would on the service's first write. The
+		// analytics topic carries the twin of every published event
+		// (ADR 0007); the relay writes both in one pass.
 		kafkatest.CreateTopic(t, topicEvents)
+		kafkatest.CreateTopic(t, topicAnalytics)
 		if status, _ := s.readyz(); status != http.StatusOK {
 			t.Fatalf("readyz after the topic appeared = %d, want 200", status)
 		}
@@ -371,6 +375,19 @@ func TestRealEntryPointRunsOnRealPostgresAndKafka(t *testing.T) {
 		}
 		if got := msg.Headers["content-type"]; got != "application/cloudevents+json; charset=UTF-8" {
 			t.Fatalf("content-type header = %q", got)
+		}
+		// The analytics twin of the same occurrence: the SAME CloudEvents id
+		// and byte-identical data, only the dataschema stream segment differs
+		// (ADR 0007).
+		twin := kafkatest.ReadN(t, topicAnalytics, 1, 30*time.Second)[0]
+		var tenv envelope
+		if err := json.Unmarshal(twin.Value, &tenv); err != nil {
+			t.Fatalf("the analytics twin is not a CloudEvent: %v: %s", err, twin.Value)
+		}
+		if tenv.ID != envlp.ID || tenv.Type != typeAuthorized || tenv.Subject != envlp.Subject ||
+			string(tenv.Data) != string(envlp.Data) ||
+			tenv.DataSchema != "urn:warehouse:returns-processing:analytics:ReturnAuthorized:v1" {
+			t.Fatalf("analytics twin = %+v (integration %+v)", tenv, envlp)
 		}
 		// The read side sees the same RMA over HTTP.
 		list := s.call(http.MethodGet, "/returns?orderRef=ord-e2e", "", "", http.StatusOK)

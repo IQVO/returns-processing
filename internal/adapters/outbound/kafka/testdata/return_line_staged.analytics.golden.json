@@ -1,0 +1,21 @@
+{
+  "specversion": "1.0",
+  "id": "4e7c2f9b-6a13-4d58-9c8e-3b5f1a2d7e94",
+  "source": "/warehouse/returns-processing",
+  "type": "com.warehouse.wms.returns-processing.disposition.ReturnLineStaged",
+  "subject": "disp-1",
+  "time": "2026-10-21T10:06:00Z",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:warehouse:returns-processing:analytics:ReturnLineStaged:v1",
+  "data": {
+    "receipt_id": "rcpt-1",
+    "line_no": 1,
+    "sku": "SKU-BOOK-0001",
+    "quantity": 2,
+    "condition": "Good",
+    "received_at": "2026-10-21T10:00:00Z",
+    "rma_id": "rma-1",
+    "disposition_id": "disp-1",
+    "site_id": "site-1"
+  }
+}

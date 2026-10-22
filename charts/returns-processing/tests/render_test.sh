@@ -233,9 +233,56 @@ if ! grep -q 'type: ClusterIP' <<<"$fe_svc"; then
 fi
 no_mode "frontend Deployment" "$fe_dep"
 
+# --- the optional analytics components (ADR 0007) -----------------------------
+# The projector (the analytical database's ONLY writer) and the read-only
+# reports binary. Off by default; each is its own component; the projector
+# gets no Service (its :8091 is probes only), the reports get one.
+if grep -q 'app.kubernetes.io/component: analytics-' <<<"$default_render"; then
+  fail "the analytics components must not render by default"
+fi
+an=(--set analytics.enabled=true --set analytics.url=postgres://u@example.invalid:5432/analytics)
+prj_dep="$(render_only projector-deployment.yaml "${base[@]}" "${an[@]}")"
+rep_dep="$(render_only reports-deployment.yaml "${base[@]}" "${an[@]}")"
+grep -q 'app.kubernetes.io/component: analytics-projector' <<<"$prj_dep" || fail "the projector Deployment is not labelled component=analytics-projector"
+grep -q 'command: \["/app/returns-projector"\]' <<<"$prj_dep" || fail "the projector Deployment must run /app/returns-projector"
+grep -q 'path: /readyz' <<<"$prj_dep" || fail "the projector must probe /readyz (its readiness flips at shutdown)"
+grep -A4 'name: ANALYTICS_DATABASE_URL$' <<<"$prj_dep" | grep -q 'secretKeyRef:' || fail "the projector ANALYTICS_DATABASE_URL must come from a Secret"
+[[ "$(env_value "$prj_dep" ANALYTICS_CONSUMER_GROUP)" == "returns-processing-analytics" ]] || fail "analytics.consumerGroup does not reach ANALYTICS_CONSUMER_GROUP"
+[[ "$(env_value "$prj_dep" KAFKA_BROKERS)" == "kafka.example.invalid:9092" ]] || fail "the projector KAFKA_BROKERS is not rendered from kafka.brokers"
+if grep -Eq 'name: (DATABASE_URL|MIGRATIONS_DATABASE_URL|[A-Z]+_CONSUMER_GROUP)$' <<<"$prj_dep" && ! grep -q 'name: ANALYTICS_CONSUMER_GROUP$' <<<"$prj_dep"; then
+  fail "the projector Deployment must not get OLTP env (it never opens the OLTP database)"
+fi
+no_mode "projector Deployment" "$prj_dep"
+
+grep -q 'app.kubernetes.io/component: analytics-reports' <<<"$rep_dep" || fail "the reports Deployment is not labelled component=analytics-reports"
+grep -q 'command: \["/app/returns-reports"\]' <<<"$rep_dep" || fail "the reports Deployment must run /app/returns-reports"
+grep -A4 'name: ANALYTICS_DATABASE_URL$' <<<"$rep_dep" | grep -q 'secretKeyRef:' || fail "the reports ANALYTICS_DATABASE_URL must come from a Secret"
+if grep -Eq 'name: (KAFKA_BROKERS|DATABASE_URL|MIGRATIONS_DATABASE_URL|[A-Z]+_CONSUMER_GROUP)$' <<<"$rep_dep"; then
+  fail "the reports Deployment must not get Kafka/OLTP env (read-only, never dials Kafka)"
+fi
+no_mode "reports Deployment" "$rep_dep"
+
+# Every env literal each analytics binary reads is rendered by its Deployment.
+assert_renders_env "projector" "$(render_only projector-deployment.yaml "${base[@]}" "${an[@]}")" returns-projector
+assert_renders_env "reports" "$(render_only reports-deployment.yaml "${base[@]}" "${an[@]}")" returns-reports
+
+# The analytics Secret: created from analytics.url, suppressed by existingSecret.
+an_secret="$(render_only analytics-secret.yaml "${base[@]}" "${an[@]}")"
+grep -q 'ANALYTICS_DATABASE_URL: "postgres://u@example.invalid:5432/analytics"' <<<"$an_secret" || fail "analytics.url does not land in the analytics Secret"
+an_existing="$(render "${base[@]}" --set analytics.enabled=true --set analytics.existingSecret=my-analytics-db)"
+if grep -q 'name: returns-processing-analytics$' <<<"$an_existing"; then
+  fail "an analytics.existingSecret must suppress the chart analytics Secret"
+fi
+grep -A4 'name: ANALYTICS_DATABASE_URL$' <<<"$an_existing" | grep -q 'name: my-analytics-db' || fail "analytics.existingSecret is not referenced by ANALYTICS_DATABASE_URL"
+
+# Refusals: analytics on without a DSN source / with an empty consumer group.
+expect_refusal "analytics without a DSN source" "analytics.url nor analytics.existingSecret" "${base[@]}" --set analytics.enabled=true
+expect_refusal "analytics with an empty consumer group" "analytics.consumerGroup" "${base[@]}" --set analytics.enabled=true --set analytics.url=postgres://u@h/analytics --set analytics.consumerGroup=
+expect_refusal "a *_MODE variable through analytics.projector.extraEnv" "*_MODE" "${base[@]}" --set analytics.enabled=true --set analytics.url=postgres://u@h/analytics --set 'analytics.projector.extraEnv[0].name=OUTBOX_MODE' --set 'analytics.projector.extraEnv[0].value=kafka'
+
 # All components together: each labelled, each Service selecting exactly its own.
-together="$(render "${base[@]}" --set mcp.enabled=true --set frontend.enabled=true)"
-for component in api mcp frontend; do
+together="$(render "${base[@]}" --set mcp.enabled=true --set frontend.enabled=true "${an[@]}")"
+for component in api mcp frontend analytics-projector analytics-reports; do
   grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "$component was not rendered when every component is enabled"
 done
 

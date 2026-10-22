@@ -139,6 +139,16 @@ nothing reads.
 {{- fail (printf "mcp.extraEnv sets %s — no *_MODE variable exists in this service's contract (ADR 0001: real Postgres and real Kafka are the only runtime)." .name) -}}
 {{- end -}}
 {{- end -}}
+{{- range .Values.analytics.projector.extraEnv -}}
+{{- if hasSuffix "_MODE" (toString .name) -}}
+{{- fail (printf "analytics.projector.extraEnv sets %s — no *_MODE variable exists in this service's contract (ADR 0001: real Postgres and real Kafka are the only runtime)." .name) -}}
+{{- end -}}
+{{- end -}}
+{{- range .Values.analytics.reports.extraEnv -}}
+{{- if hasSuffix "_MODE" (toString .name) -}}
+{{- fail (printf "analytics.reports.extraEnv sets %s — no *_MODE variable exists in this service's contract (ADR 0001: real Postgres and real Kafka are the only runtime)." .name) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -149,3 +159,42 @@ more than one component (tests/test_service_selectors.py).
 {{- define "returns-processing.mcpFullname" -}}
 {{- include "returns-processing.fullname" . }}-mcp
 {{- end }}
+
+{{/*
+Fully qualified names of the analytics components (ADR 0007). Each is its own
+workload with its own app.kubernetes.io/component label; the reports Service
+never selects more than one of them (tests/test_service_selectors.py).
+*/}}
+{{- define "returns-processing.analyticsProjectorFullname" -}}
+{{- include "returns-processing.fullname" . }}-projector
+{{- end }}
+
+{{- define "returns-processing.analyticsReportsFullname" -}}
+{{- include "returns-processing.fullname" . }}-reports
+{{- end }}
+
+{{/*
+Name of the Secret holding ANALYTICS_DATABASE_URL: the operator's own
+(analytics.existingSecret) or the one this chart creates from analytics.url
+(analytics-secret.yaml).
+*/}}
+{{- define "returns-processing.analyticsSecretName" -}}
+{{- if .Values.analytics.existingSecret -}}
+{{- .Values.analytics.existingSecret -}}
+{{- else -}}
+{{- include "returns-processing.fullname" . }}-analytics
+{{- end -}}
+{{- end }}
+
+{{/*
+Analytics guard (ADR 0007): the projector and reports binaries exit at boot
+without ANALYTICS_DATABASE_URL, and the projector without KAFKA_BROKERS (always
+required by this chart) and ANALYTICS_CONSUMER_GROUP (no default). Refuse them
+at render time, only while analytics is on, naming the value.
+*/}}
+{{- define "returns-processing.requireAnalyticsConfig" -}}
+{{- if not (or .Values.analytics.url .Values.analytics.existingSecret) -}}
+{{- fail "analytics.enabled is true but neither analytics.url nor analytics.existingSecret is set: the projector and reports binaries exit at boot without ANALYTICS_DATABASE_URL (ADR 0007)." -}}
+{{- end -}}
+{{- $_ := required "analytics.enabled is true but analytics.consumerGroup is empty: the projector exits at boot without ANALYTICS_CONSUMER_GROUP, a stable Kafka group id (ADR 0007)." .Values.analytics.consumerGroup -}}
+{{- end -}}

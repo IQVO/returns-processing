@@ -127,7 +127,8 @@ func run(ctx context.Context) error {
 	logger.Info("returns-processing running",
 		"brokers", cfg.brokers, "http_addr", cfg.httpAddr,
 		"relay_interval", cfg.interval.String(), "max_attempts", cfg.maxAttempts,
-		"events_topic", outboundkafka.TopicEvents, "dlq_topic", outboundkafka.TopicDLQ,
+		"events_topic", outboundkafka.TopicEvents, "analytics_topic", outboundkafka.TopicAnalytics,
+		"dlq_topic", outboundkafka.TopicDLQ,
 		"consumers", len(consumers.workers))
 	return serveUntilSignal(ctx, logger, httpServer, readiness, relay, consumers)
 }

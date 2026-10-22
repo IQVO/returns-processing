@@ -25,8 +25,10 @@ info:
     something: inventory-storage consumes it into its staged-receipt use case
     (same shape as its `ReceiptLineReceived` plus `rma_id`, `disposition_id`,
     `site_id`); `UnexpectedReturnReceived` is what exception-management turns
-    into a problem-solve case. An analytics mirror on
-    `warehouse.returns-processing.analytics` is planned, not built (ADR 0004).
+    into a problem-solve case. Every one of the seven types is ALSO mirrored
+    on `warehouse.returns-processing.analytics` (dataschema
+    `urn:warehouse:returns-processing:analytics:<EventName>:v1`), the stream
+    this service's own projector consumes (ADR 0007).
 
     **Consumed (ADR 0003).** `ProductClassified` from product-master, the
     allocated order lines (`OrderAllocated` / `OrderPartiallyAllocated`) from
@@ -45,8 +47,8 @@ info:
     outbox row; consumers may extract them, and must not require them.
     `specversion`, `id`, `source` (`/warehouse/returns-processing`), `type`,
     `subject`, `time`, `datacontenttype` (`application/json`) and `dataschema`
-    (`urn:warehouse:returns-processing:events:<EventName>:v1`) are all
-    required. Kafka key = the subject. Type =
+    (`urn:warehouse:returns-processing:<events|analytics>:<EventName>:v1`) are
+    all required. Kafka key = the subject. Type =
     `com.warehouse.wms.returns-processing.<entity>.<EventName>`. A breaking
     payload change is a new `.v2` type, never a mutation.
 
@@ -70,6 +72,8 @@ tags:
     description: Events raised by the ReturnReceipt aggregate.
   - name: disposition
     description: Events raised by the Disposition aggregate.
+  - name: analytics
+    description: This service's own analytics stream and read side (ADR 0007).
   - name: consumed
     description: Events produced by sibling contexts that this service consumes (ADR 0003).
 
@@ -100,6 +104,43 @@ channels:
           - $ref: "#/components/messages/UnexpectedReturnReceived"
           - $ref: "#/components/messages/DispositionDecided"
           - $ref: "#/components/messages/ReturnLineStaged"
+
+  warehouse.returns-processing.analytics:
+    description: |
+      This service's own analytics stream (ADR 0007), written by the SAME
+      transactional outbox pass as the integration topic: every domain event
+      appears here too, under the SAME CloudEvents id, `type`, `subject` and
+      key and with a byte-identical payload; only the `dataschema` stream
+      segment differs
+      (urn:warehouse:returns-processing:analytics:<EventName>:v1). It is NOT
+      an integration contract: the only consumer is this service's
+      cmd/returns-projector (fixed group from `ANALYTICS_CONSUMER_GROUP`),
+      which folds five of the seven types into the analytical database (the
+      two authorization twins are acknowledged and ignored); its
+      deterministic poison goes to
+      warehouse.returns-processing.analytics.dlq. Other contexts keep reading
+      warehouse.returns-processing.events.
+    subscribe:
+      operationId: receiveReturnsProcessingAnalytics
+      summary: Receive the analytics twin of every domain event.
+      description: |
+        Payloads are byte-for-byte the integration payloads (ADR 0007);
+        only the dataschema names the analytics stream. The projector folds
+        `ReturnReceiptOpened`, `UnexpectedReturnReceived`,
+        `ReturnLineInspected`, `DispositionDecided` and `ReturnLineStaged`
+        into the analytical facts; `ReturnAuthorized` and
+        `ReturnAuthorizationRejected` answer no report and are ignored.
+      tags:
+        - name: analytics
+      message:
+        oneOf:
+          - $ref: "#/components/messages/ReturnAuthorizedAnalytics"
+          - $ref: "#/components/messages/ReturnAuthorizationRejectedAnalytics"
+          - $ref: "#/components/messages/ReturnReceiptOpenedAnalytics"
+          - $ref: "#/components/messages/ReturnLineInspectedAnalytics"
+          - $ref: "#/components/messages/UnexpectedReturnReceivedAnalytics"
+          - $ref: "#/components/messages/DispositionDecidedAnalytics"
+          - $ref: "#/components/messages/ReturnLineStagedAnalytics"
 
   warehouse.product-master.events:
     description: |
@@ -418,6 +459,230 @@ components:
             time: "2026-10-22T15:10:02Z"
             datacontenttype: "application/json"
             dataschema: "urn:warehouse:returns-processing:events:ReturnLineStaged:v1"
+            data:
+              receipt_id: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+              line_no: 1
+              sku: "SKU-1"
+              quantity: 2
+              condition: "Good"
+              received_at: "2026-10-22T14:05:00Z"
+              rma_id: "rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80"
+              disposition_id: "disp-0c1d2e3f-4a5b-4e6f-9a7b-8c9d0e1f2a3b"
+              site_id: "WH1"
+
+    ReturnAuthorizedAnalytics:
+      name: ReturnAuthorized
+      title: Return authorized (analytics twin)
+      summary: The analytics-stream twin of ReturnAuthorized (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:ReturnAuthorized:v1`. Consumed only by cmd/returns-projector, which ignores it (no report answers the authorization funnel today)."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/ReturnAuthorizedEvent"
+      examples:
+        - name: authorized
+          summary: The analytics twin of the authorized example above.
+          payload:
+            specversion: "1.0"
+            id: "9f2c1d3e-5a4b-4c6d-8e7f-1a2b3c4d5e6f"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized"
+            subject: "rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80"
+            time: "2026-10-21T09:30:00Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:ReturnAuthorized:v1"
+            data:
+              rma_id: "rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80"
+              order_id: "ord-7c9e2f1a"
+              line_no: 1
+              sku: "SKU-1"
+              quantity: 2
+              site_id: "WH1"
+              reason_code: "DAMAGED"
+              window_ends_at: "2026-11-20T09:30:00Z"
+              authorized_at: "2026-10-21T09:30:00Z"
+
+    ReturnAuthorizationRejectedAnalytics:
+      name: ReturnAuthorizationRejected
+      title: Return authorization rejected (analytics twin)
+      summary: The analytics-stream twin of ReturnAuthorizationRejected (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:ReturnAuthorizationRejected:v1`. Consumed only by cmd/returns-projector, which ignores it."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/ReturnAuthorizationRejectedEvent"
+      examples:
+        - name: rejected
+          summary: The analytics twin of the rejected example above.
+          payload:
+            specversion: "1.0"
+            id: "1e3f5a7c-9b1d-4f2a-8c3e-5d6f7a8b9c0d"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorizationRejected"
+            subject: "rma-6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b90"
+            time: "2026-10-21T09:31:00Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:ReturnAuthorizationRejected:v1"
+            data:
+              rma_id: "rma-6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b90"
+              order_id: "ord-7c9e2f1a"
+              line_no: 2
+              sku: "SKU-2"
+              quantity: 1
+              rejection_code: "LINE_NOT_MANIFESTED"
+              rejected_at: "2026-10-21T09:31:00Z"
+
+    ReturnReceiptOpenedAnalytics:
+      name: ReturnReceiptOpened
+      title: Return receipt opened (analytics twin)
+      summary: The analytics-stream twin of ReturnReceiptOpened (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:ReturnReceiptOpened:v1`. The projector folds every carried line into its return_line_facts (the opened milestone)."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/ReturnReceiptOpenedEvent"
+      examples:
+        - name: opened
+          summary: The analytics twin of the opened example above.
+          payload:
+            specversion: "1.0"
+            id: "2f4a6b8c-0d2e-4a3b-9c4d-6e7f8a9b0c1d"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.returnreceipt.ReturnReceiptOpened"
+            subject: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+            time: "2026-10-22T14:05:00Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:ReturnReceiptOpened:v1"
+            data:
+              receipt_id: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+              rma_id: "rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80"
+              site_id: "WH1"
+              opened_at: "2026-10-22T14:05:00Z"
+              lines:
+                - { line_no: 1, sku: "SKU-1", quantity: 2, rma_id: "rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80" }
+                - { line_no: 2, sku: "SKU-9", quantity: 1, rma_id: null }
+
+    ReturnLineInspectedAnalytics:
+      name: ReturnLineInspected
+      title: Return line inspected (analytics twin)
+      summary: The analytics-stream twin of ReturnLineInspected (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:ReturnLineInspected:v1`. The projector records the inspected milestone of the receipt line."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/ReturnLineInspectedEvent"
+      examples:
+        - name: inspected
+          summary: The analytics twin of the inspected example above.
+          payload:
+            specversion: "1.0"
+            id: "3a5b7c9d-1e2f-4b3c-8d4e-7f8a9b0c1d2e"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.returnreceipt.ReturnLineInspected"
+            subject: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+            time: "2026-10-22T15:10:00Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:ReturnLineInspected:v1"
+            data:
+              receipt_id: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+              line_no: 1
+              sku: "SKU-1"
+              quantity: 2
+              grade: "B"
+              reason_codes: ["CUSTOMER_DAMAGE"]
+              inspected_at: "2026-10-22T15:10:00Z"
+
+    UnexpectedReturnReceivedAnalytics:
+      name: UnexpectedReturnReceived
+      title: Unexpected return received (analytics twin)
+      summary: The analytics-stream twin of UnexpectedReturnReceived (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:UnexpectedReturnReceived:v1`. The projector opens a return-line fact for the unexpected line (the opened milestone)."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/UnexpectedReturnReceivedEvent"
+      examples:
+        - name: unexpected
+          summary: The analytics twin of the unexpected example above.
+          payload:
+            specversion: "1.0"
+            id: "4b6c8d9e-2f3a-4c4d-9e5f-8a9b0c1d2e3f"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.returnreceipt.UnexpectedReturnReceived"
+            subject: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+            time: "2026-10-22T14:05:00Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:UnexpectedReturnReceived:v1"
+            data:
+              receipt_id: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+              line_no: 2
+              sku: "SKU-9"
+              quantity: 1
+              site_id: "WH1"
+              received_at: "2026-10-22T14:05:00Z"
+
+    DispositionDecidedAnalytics:
+      name: DispositionDecided
+      title: Disposition decided (analytics twin)
+      summary: The analytics-stream twin of DispositionDecided (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:DispositionDecided:v1`. The projector records one disposition_facts row (the disposition-mix report's cell) and the decided milestone of the receipt line."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/DispositionDecidedEvent"
+      examples:
+        - name: decided
+          summary: The analytics twin of the decided example above.
+          payload:
+            specversion: "1.0"
+            id: "5c7d9e0f-3a4b-4d5e-8f6a-9b0c1d2e3f4a"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.disposition.DispositionDecided"
+            subject: "disp-0c1d2e3f-4a5b-4e6f-9a7b-8c9d0e1f2a3b"
+            time: "2026-10-22T15:10:01Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:DispositionDecided:v1"
+            data:
+              disposition_id: "disp-0c1d2e3f-4a5b-4e6f-9a7b-8c9d0e1f2a3b"
+              receipt_id: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
+              line_no: 1
+              sku: "SKU-1"
+              quantity: 2
+              grade: "B"
+              outcome: "RESTOCK"
+              policy_version: 3
+              supersedes: null
+              reason: null
+              decided_at: "2026-10-22T15:10:01Z"
+
+    ReturnLineStagedAnalytics:
+      name: ReturnLineStaged
+      title: Return line staged (analytics twin)
+      summary: The analytics-stream twin of ReturnLineStaged (ADR 0007).
+      description: "Same `type`, `id`, `subject`, key and payload as the integration message; `dataschema` = `urn:warehouse:returns-processing:analytics:ReturnLineStaged:v1`. The projector records the staged milestone (the value-recovery and return-cycle-time reports' basis)."
+      contentType: application/cloudevents+json
+      tags:
+        - name: analytics
+      payload:
+        $ref: "#/components/schemas/ReturnLineStagedEvent"
+      examples:
+        - name: staged
+          summary: The analytics twin of the staged example above.
+          payload:
+            specversion: "1.0"
+            id: "6d8e0f1a-4b5c-4e6f-9a7b-8c9d0e1f2a3c"
+            source: "/warehouse/returns-processing"
+            type: "com.warehouse.wms.returns-processing.disposition.ReturnLineStaged"
+            subject: "disp-0c1d2e3f-4a5b-4e6f-9a7b-8c9d0e1f2a3b"
+            time: "2026-10-22T15:10:02Z"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:returns-processing:analytics:ReturnLineStaged:v1"
             data:
               receipt_id: "rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d"
               line_no: 1

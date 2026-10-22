@@ -20,3 +20,4 @@ section.
 | [0004](/docs/adr/0004-cloudevents-envelope-and-type-catalogue) | CloudEvents envelope and type catalogue | Accepted (2026-10-21) |
 | [0005](/docs/adr/0005-transactional-outbox-and-relay) | the transactional outbox and its relay — events leave through the outbox only | Accepted (2026-10-21) |
 | [0006](/docs/adr/0006-console-remote-web) | the console remote (returns_mfe) — a read-and-command screen over the existing REST | Accepted (2026-10-21) |
+| [0007](/docs/adr/0007-analytics-read-side) | the analytics read side — own topic, own database, projector + reports | Accepted (2026-10-21) |

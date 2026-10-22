@@ -78,8 +78,10 @@ touches the stock ledger. That lifecycle and its policy object belong to a conte
   `DispositionPolicy.max_units_per_line` only.
 - **Restock loop closure**: inventory-storage's `ItemStowed` is not yet on its integration topic;
   when promoted, this service can consume it to see a staged line reach a bin.
-- **Analytics mirror topic** (`warehouse.returns-processing.analytics`) and an analytics read side:
-  declared in the AsyncAPI contract, arriving with a later decision.
+
+Built since this page last changed: the **analytics read side** (ADR 0007 —
+`warehouse.returns-processing.analytics`, projector, reports) shipped on
+2026-10-21; see [Analytics](/docs/operations/analytics).
 
 Source: [ADR 0001](/docs/adr/0001-returns-processing-bounded-context), the fleet plan
 (`.hermes/plans/2026-10-20_231017-returns-processing-and-exception-management.md`).

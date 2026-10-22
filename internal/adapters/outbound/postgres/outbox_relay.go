@@ -13,12 +13,13 @@ import (
 	"github.com/claudioed/returns-processing/internal/application/outbox"
 )
 
-// RelayEncoder maps a claimed outbox row to its Kafka wire form. The kafka
-// adapter's Encoder is the production implementation; the poison contract is
-// Encode's: ok=false + a cause means the row can never be sent, so it is
-// dead-lettered instead of retried.
+// RelayEncoder maps a claimed outbox row to its Kafka wire form: one message
+// per destination topic (the integration topic and its analytics twin,
+// ADR 0007). The kafka adapter's Encoder is the production implementation;
+// the poison contract is Encode's: ok=false + a cause means the row can never
+// be sent, so it is dead-lettered instead of retried.
 type RelayEncoder interface {
-	Encode(row outbox.Row) (msg outbox.Message, cause string, ok bool)
+	Encode(row outbox.Row) (msgs []outbox.Message, cause string, ok bool)
 	DeadLetter(row outbox.Row, cause string) outbox.Message
 }
 
@@ -180,7 +181,7 @@ func (r *OutboxRelay) RelayOnce(ctx context.Context) (int, error) {
 
 	relayed := 0
 	for _, row := range rows {
-		msg, cause, ok := r.encoder.Encode(row.row)
+		msgs, cause, ok := r.encoder.Encode(row.row)
 		if !ok {
 			if err := r.deadLetter(ctx, tx, row, cause); err != nil {
 				return relayed, err
@@ -188,8 +189,18 @@ func (r *OutboxRelay) RelayOnce(ctx context.Context) (int, error) {
 			relayed++
 			continue
 		}
-		if err := r.sink.Send(ctx, msg); err != nil {
-			return relayed, r.recordFailure(ctx, tx, row, msg, err)
+		if len(msgs) == 0 {
+			// An encoder that encodes nothing for an encodable row is a
+			// programming error: stop the pass (the row stays due) rather
+			// than delete an unpublished occurrence.
+			return relayed, fmt.Errorf("outbox relay: encoder returned no messages for row %d", row.id)
+		}
+		// One Send for every destination topic (the integration topic and
+		// its analytics twin): either both land or the row is retried as a
+		// whole, and the twin carries the same CloudEvents id, so a partial
+		// retry is deduped downstream.
+		if err := r.sink.Send(ctx, msgs...); err != nil {
+			return relayed, r.recordFailure(ctx, tx, row, msgs[0], err)
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM outbox WHERE id = $1`, row.id); err != nil {
 			return relayed, fmt.Errorf("delete outbox row %d: %w", row.id, err)
