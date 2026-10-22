@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_return_line_facts_staged_at;
+DROP INDEX IF EXISTS idx_return_line_facts_decided_at;
+DROP INDEX IF EXISTS idx_return_line_facts_opened_at;
+DROP INDEX IF EXISTS idx_return_line_facts_site;
+DROP TABLE IF EXISTS return_line_facts;
+DROP INDEX IF EXISTS idx_disposition_facts_line;
+DROP INDEX IF EXISTS idx_disposition_facts_decided_at;
+DROP TABLE IF EXISTS disposition_facts;
+DROP INDEX IF EXISTS idx_analytics_processed_events_occurred_at;
+DROP TABLE IF EXISTS analytics_processed_events;
