@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,15 +194,33 @@ func readGolden(t *testing.T, name string) any {
 	return decodeJSON(t, name, raw)
 }
 
-// assertGoldenMessage checks one encoded message against its golden case:
-// every routing column, the Kafka key, exactly the content-type header, a
-// CloudEvents-valid value and the whole envelope against the golden file.
-func assertGoldenMessage(t *testing.T, c goldenCase, msg outbox.Message) {
+// streamOf is one destination stream an encoded occurrence goes to.
+type streamOf struct {
+	name   string // cloudevents stream segment (events | analytics)
+	topic  string
+	golden func(string) string // golden file name of the case for this stream
+	schema func(string) string // dataschema of the case for this stream
+}
+
+var streams = []streamOf{
+	{name: "events", topic: outboundkafka.TopicEvents,
+		golden: func(g string) string { return g },
+		schema: func(s string) string { return s }},
+	{name: "analytics", topic: outboundkafka.TopicAnalytics,
+		golden: func(g string) string { return strings.Replace(g, ".golden.json", ".analytics.golden.json", 1) },
+		schema: func(s string) string { return strings.Replace(s, ":events:", ":analytics:", 1) }},
+}
+
+// assertGoldenMessage checks one encoded message against its golden case on
+// one stream: every routing column, the Kafka key, exactly the content-type
+// header, a CloudEvents-valid value and the whole envelope against the
+// golden file.
+func assertGoldenMessage(t *testing.T, c goldenCase, st streamOf, msg outbox.Message) {
 	t.Helper()
-	if msg.Topic != outboundkafka.TopicEvents {
-		t.Errorf("topic = %q, want %q", msg.Topic, outboundkafka.TopicEvents)
+	if msg.Topic != st.topic {
+		t.Errorf("topic = %q, want %q", msg.Topic, st.topic)
 	}
-	if msg.EventID != c.id || msg.EventType != c.eventType || msg.Subject != c.aggregID || msg.DataSchema != c.schema {
+	if msg.EventID != c.id || msg.EventType != c.eventType || msg.Subject != c.aggregID || msg.DataSchema != st.schema(c.schema) {
 		t.Errorf("msg = id %q type %q subject %q schema %q", msg.EventID, msg.EventType, msg.Subject, msg.DataSchema)
 	}
 	if string(msg.Key) != c.aggregID {
@@ -214,22 +233,39 @@ func assertGoldenMessage(t *testing.T, c goldenCase, msg outbox.Message) {
 	if _, err := cloudevents.Decode(msg.Value); err != nil {
 		t.Fatalf("value is not a valid CloudEvent: %v", err)
 	}
-	if got, want := decodeJSON(t, "value", msg.Value), readGolden(t, c.golden); !reflect.DeepEqual(got, want) {
-		t.Errorf("%s: value differs from the golden\n got: %s\nwant: %v", c.golden, msg.Value, want)
+	golden := st.golden(c.golden)
+	if got, want := decodeJSON(t, "value", msg.Value), readGolden(t, golden); !reflect.DeepEqual(got, want) {
+		t.Errorf("%s: value differs from the golden\n got: %s\nwant: %v", golden, msg.Value, want)
 	}
 }
 
-// TestEncoder_GoldenJSONPerType pins, per published type, every CloudEvents
-// attribute, the whole value against the golden file, the Kafka key and
-// exactly the content-type header.
+// TestEncoder_GoldenJSONPerType pins, per published type and per destination
+// stream, every CloudEvents attribute, the whole value against the golden
+// file, the Kafka key and exactly the content-type header. The analytics twin
+// carries the SAME id, type, subject, key and payload bytes as the
+// integration message; only the dataschema stream segment differs (ADR 0007).
 func TestEncoder_GoldenJSONPerType(t *testing.T) {
 	for _, c := range goldenCases() {
 		t.Run(c.name, func(t *testing.T) {
-			msg, cause, ok := outboundkafka.NewEncoder().Encode(c.row(t))
+			msgs, cause, ok := outboundkafka.NewEncoder().Encode(c.row(t))
 			if !ok {
 				t.Fatalf("encode failed: %s", cause)
 			}
-			assertGoldenMessage(t, c, msg)
+			if len(msgs) != 2 {
+				t.Fatalf("messages = %d, want 2 (integration + analytics twin)", len(msgs))
+			}
+			for i, st := range streams {
+				assertGoldenMessage(t, c, st, msgs[i])
+			}
+			// The twin's payload bytes are byte-identical to the
+			// integration message's except the dataschema attribute.
+			twin := strings.Replace(string(msgs[1].Value), ":analytics:", ":events:", 1)
+			if twin != string(msgs[0].Value) {
+				t.Errorf("analytics twin is not the integration value with the dataschema stream swapped\n twin: %s\n  evt: %s", msgs[1].Value, msgs[0].Value)
+			}
+			if msgs[1].EventID != msgs[0].EventID {
+				t.Errorf("twin id = %q, want the integration id %q", msgs[1].EventID, msgs[0].EventID)
+			}
 		})
 	}
 }
@@ -239,16 +275,18 @@ func TestEncoder_GoldenJSONPerType(t *testing.T) {
 func TestEncoder_ValuesDecodeAsCloudEvents(t *testing.T) {
 	enc := outboundkafka.NewEncoder()
 	for _, c := range goldenCases() {
-		msg, _, ok := enc.Encode(c.row(t))
+		msgs, _, ok := enc.Encode(c.row(t))
 		if !ok {
 			t.Fatalf("%s: encode failed", c.name)
 		}
-		e, err := cloudevents.Decode(msg.Value)
-		if err != nil {
-			t.Fatalf("%s: decode: %v", c.name, err)
-		}
-		if e.Source() != "/warehouse/returns-processing" || e.DataContentType() != "application/json" || e.ID() != c.id {
-			t.Errorf("%s: source %q datacontenttype %q id %q", c.name, e.Source(), e.DataContentType(), e.ID())
+		for _, msg := range msgs {
+			e, err := cloudevents.Decode(msg.Value)
+			if err != nil {
+				t.Fatalf("%s: decode: %v", c.name, err)
+			}
+			if e.Source() != "/warehouse/returns-processing" || e.DataContentType() != "application/json" || e.ID() != c.id {
+				t.Errorf("%s: source %q datacontenttype %q id %q", c.name, e.Source(), e.DataContentType(), e.ID())
+			}
 		}
 	}
 }
@@ -291,12 +329,12 @@ func TestEncoder_UnknownYieldsNothing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			msg, cause, ok := enc.Encode(tc.modify(authorized))
+			msgs, cause, ok := enc.Encode(tc.modify(authorized))
 			if ok {
-				t.Fatalf("Encode = (%+v), want not-ok", msg)
+				t.Fatalf("Encode = (%+v), want not-ok", msgs)
 			}
-			if msg.Topic != "" || msg.Value != nil {
-				t.Errorf("poison message = %+v, want the zero message", msg)
+			if msgs != nil {
+				t.Errorf("poison messages = %+v, want none", msgs)
 			}
 			if cause == "" {
 				t.Error("cause is empty, want a human-readable reason")
@@ -350,13 +388,14 @@ func TestEncoder_DeadLetterBoundsCause(t *testing.T) {
 
 func TestEncoder_Topics(t *testing.T) {
 	enc := outboundkafka.NewEncoder()
-	if enc.EventsTopic != "warehouse.returns-processing.events" || enc.DLQTopic != "warehouse.returns-processing.events.dlq" {
-		t.Fatalf("topics = %q, %q", enc.EventsTopic, enc.DLQTopic)
+	if enc.EventsTopic != "warehouse.returns-processing.events" || enc.AnalyticsTopic != "warehouse.returns-processing.analytics" ||
+		enc.DLQTopic != "warehouse.returns-processing.events.dlq" {
+		t.Fatalf("topics = %q, %q, %q", enc.EventsTopic, enc.AnalyticsTopic, enc.DLQTopic)
 	}
-	enc.EventsTopic, enc.DLQTopic = "t.events", "t.dlq"
-	msg, _, ok := enc.Encode(goldenCases()[0].row(t))
-	if !ok || msg.Topic != "t.events" {
-		t.Fatalf("msg.Topic = %q ok=%v, want the override", msg.Topic, ok)
+	enc.EventsTopic, enc.AnalyticsTopic, enc.DLQTopic = "t.events", "t.analytics", "t.dlq"
+	msgs, _, ok := enc.Encode(goldenCases()[0].row(t))
+	if !ok || len(msgs) != 2 || msgs[0].Topic != "t.events" || msgs[1].Topic != "t.analytics" {
+		t.Fatalf("msg topics = %+v ok=%v, want the overrides", msgs, ok)
 	}
 	if dlq := enc.DeadLetter(goldenCases()[0].row(t), "x"); dlq.Topic != "t.dlq" {
 		t.Fatalf("dlq.Topic = %q, want the override", dlq.Topic)
@@ -380,19 +419,23 @@ func (f *fakeWriter) WriteMessages(_ context.Context, msgs ...kafkago.Message) e
 func TestRelaySink_SendsEncodedMessagesWithTopicKeyHeaders(t *testing.T) {
 	w := &fakeWriter{}
 	sink := outboundkafka.NewRelaySinkWithWriter(w)
-	msg, _, ok := outboundkafka.NewEncoder().Encode(goldenCases()[0].row(t))
+	msgs, _, ok := outboundkafka.NewEncoder().Encode(goldenCases()[0].row(t))
 	if !ok {
 		t.Fatal("encode failed")
 	}
-	if err := sink.Send(context.Background(), msg); err != nil {
+	if err := sink.Send(context.Background(), msgs...); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	if len(w.written) != 1 || len(w.written[0]) != 1 {
-		t.Fatalf("writes = %+v, want one write of one message", w.written)
+	if len(w.written) != 1 || len(w.written[0]) != 2 {
+		t.Fatalf("writes = %+v, want one write of the two messages", w.written)
 	}
 	got := w.written[0][0]
-	if got.Topic != outboundkafka.TopicEvents || string(got.Key) != "rma-1" || string(got.Value) != string(msg.Value) {
+	if got.Topic != outboundkafka.TopicEvents || string(got.Key) != "rma-1" || string(got.Value) != string(msgs[0].Value) {
 		t.Errorf("message = topic %q key %q value %s", got.Topic, got.Key, got.Value)
+	}
+	twin := w.written[0][1]
+	if twin.Topic != outboundkafka.TopicAnalytics || string(twin.Key) != "rma-1" || string(twin.Value) != string(msgs[1].Value) {
+		t.Errorf("twin = topic %q key %q value %s", twin.Topic, twin.Key, twin.Value)
 	}
 	if len(got.Headers) != 1 || got.Headers[0].Key != "content-type" || string(got.Headers[0].Value) != cloudevents.MediaType {
 		t.Errorf("headers = %+v", got.Headers)
@@ -423,8 +466,8 @@ func TestRelaySink_EmptyListIsANoop(t *testing.T) {
 func TestRelaySink_WrapsWriterErrors(t *testing.T) {
 	boom := errors.New("broker unreachable")
 	sink := outboundkafka.NewRelaySinkWithWriter(&fakeWriter{err: boom})
-	msg, _, _ := outboundkafka.NewEncoder().Encode(goldenCases()[0].row(t))
-	err := sink.Send(context.Background(), msg)
+	msgs, _, _ := outboundkafka.NewEncoder().Encode(goldenCases()[0].row(t))
+	err := sink.Send(context.Background(), msgs...)
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want it to wrap boom", err)
 	}
