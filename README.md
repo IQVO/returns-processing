@@ -14,10 +14,21 @@ Returns Processing: WMS-tier Supporting bounded context of the warehouse-systems
 - Keeps event-fed local copies of product classifications, allocated lines and manifested work units. It never calls a sibling over REST or MCP.
 - Runs on real Postgres and real Kafka only (no in-memory mode). No auth.
 
+## Web remote (console)
+
+`web/` is the `returns_mfe` Module Federation remote for the warehouse-console
+shell (ADR 0006): returns list by order, RMA detail with the receive → inspect
+→ override flow, and the current disposition policy — all over the existing
+REST, a fresh `Idempotency-Key` on every write POST. Dev server `:4010`
+(`cd web && npm ci && npm run dev`); served in the cluster by nginx under
+`/mfes/returns-processing/` (`web/Dockerfile`, chart `frontend.enabled`).
+Registration in the console shell is the console repo's change.
+
 ## Status
 
-Service (domain, application, adapters), packaging (chart, Dockerfile, CI) and this documentation
-site are built on `develop` (PRs #2, #3 and the docs PR). Not yet done: first `develop` → `main`
+Service (domain, application, adapters), packaging (chart, Dockerfile, CI), this documentation
+site and the console web remote are built on `develop` (PRs #2, #3, the docs PR and the
+console-remote PR). Not yet done: first `develop` → `main`
 release and `warehouse-infra` registration (`docs/before-first-release.md` is the checklist).
 
 ## Documentation
