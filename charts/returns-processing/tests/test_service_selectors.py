@@ -11,9 +11,11 @@ selector.matchLabels and its pod labels, and every Service selects on it, so
 each Service selects EXACTLY ONE Deployment. This test fails if that ever
 stops being true.
 
-Components: api (always) and mcp (default off; the read-only MCP server of
+Components: api (always), mcp (default off; the read-only MCP server of
 cmd/mcp: get_return, list_returns_by_order, get_disposition_policy over
-Streamable HTTP). The enabled render runs both TOGETHER.
+Streamable HTTP) and frontend (default off; the returns_mfe Module
+Federation remote from web/, static nginx). The enabled render runs all
+three TOGETHER.
 
 It also asserts the ADR 0001 runtime: the mandatory env is rendered and no
 *_MODE variable ever is.
@@ -41,6 +43,7 @@ ENABLE_EVERYTHING = BASE + [
     "--set", "config.outboxRelayInterval=500ms",
     "--set", "config.shutdownDrainDelay=5s",
     "--set", "mcp.enabled=true",
+    "--set", "frontend.enabled=true",
 ]
 
 # Every env var cmd/api reads that has a dedicated chart value.
@@ -100,13 +103,13 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
     services = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Service"}
     deployments = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Deployment"}
 
-    expected = {RELEASE, f"{RELEASE}-mcp"}
+    expected = {RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-frontend"}
     if set(deployments) != expected:
         failures.append(f"expected Deployments {sorted(expected)}, got {sorted(deployments)}")
     if set(services) != expected:
         failures.append(f"expected a Service per Deployment, got {sorted(services)}")
 
-    for name, component in ((RELEASE, "api"), (f"{RELEASE}-mcp", "mcp")):
+    for name, component in ((RELEASE, "api"), (f"{RELEASE}-mcp", "mcp"), (f"{RELEASE}-frontend", "frontend")):
         if name in services and selector_of(services[name]).get("app.kubernetes.io/component") != component:
             failures.append(f"Service {name} selector must pin component={component}")
         if name in deployments:
@@ -141,6 +144,7 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
 
     check_env(deployments.get(RELEASE), failures)
     check_mcp(deployments.get(f"{RELEASE}-mcp"), failures)
+    check_frontend(deployments.get(f"{RELEASE}-frontend"), failures)
 
 
 def command_of(dep: dict) -> list[str] | None:
@@ -189,10 +193,23 @@ def check_mcp(dep: dict | None, failures: list[str]) -> None:
             failures.append(f"the MCP Deployment does not render {want}")
 
 
+def check_frontend(dep: dict | None, failures: list[str]) -> None:
+    """The frontend is a static nginx pod: no env from this chart's runtime at
+    all (its API origin is read at runtime from the console's /config.json)."""
+    if dep is None:
+        return
+    if env_names(dep):
+        failures.append(f"the frontend Deployment must render no env (static SPA): {env_names(dep)}")
+    ports = dep["spec"]["template"]["spec"]["containers"][0].get("ports", [])
+    if not any(p.get("name") == "http" for p in ports):
+        failures.append("the frontend container does not expose the named port 'http'")
+
+
 def check_defaults(failures: list[str]) -> None:
     """Default values deploy the api only."""
     defaults = render(BASE)
-    stray = [d["metadata"]["name"] for d in defaults if d["metadata"]["name"].endswith("-mcp")]
+    stray = [d["metadata"]["name"] for d in defaults
+             if d["metadata"]["name"].endswith(("-mcp", "-frontend"))]
     if stray:
         failures.append(f"optional components rendered with default values: {stray}")
     kinds = sorted(d["kind"] for d in defaults if d["kind"] in {"Deployment", "Service"})
@@ -237,10 +254,10 @@ def main() -> int:
             print(f"FAIL: {f}")
         return 1
 
-    print("PASS: every Service selects exactly one Deployment (api, mcp); mcp is off by default; "
-          "every cmd/api env var has a dedicated value and no *_MODE is rendered; the chart refuses to "
-          "render without a database source, without brokers, with an empty consumer group or with a "
-          "*_MODE injected through extraEnv")
+    print("PASS: every Service selects exactly one Deployment (api, mcp, frontend); mcp and frontend "
+          "are off by default; every cmd/api env var has a dedicated value and no *_MODE is rendered; "
+          "the frontend renders no env; the chart refuses to render without a database source, without "
+          "brokers, with an empty consumer group or with a *_MODE injected through extraEnv")
     return 0
 
 

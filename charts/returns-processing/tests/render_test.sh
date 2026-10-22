@@ -170,11 +170,14 @@ expect_refusal "a short grace period" "terminationGracePeriodSeconds" "${base[@]
 expect_refusal "a *_MODE variable through extraEnv" "*_MODE" "${base[@]}" --set 'extraEnv[0].name=MANIFEST_MODE' --set 'extraEnv[0].value=permissive'
 expect_refusal "a *_MODE variable through mcp.extraEnv" "*_MODE" "${base[@]}" --set mcp.enabled=true --set 'mcp.extraEnv[0].name=OUTBOX_MODE' --set 'mcp.extraEnv[0].value=kafka'
 
-# --- the optional mcp component ----------------------------------------------------
+# --- the optional mcp and frontend components --------------------------------------
 # Off by default: the default render is the api alone.
 default_render="$(render "${base[@]}")"
 if grep -q 'app.kubernetes.io/component: mcp$' <<<"$default_render"; then
   fail "the mcp component must not render by default"
+fi
+if grep -q 'app.kubernetes.io/component: frontend$' <<<"$default_render"; then
+  fail "the frontend component must not render by default"
 fi
 
 # A binary's env literals (os.Getenv / getenv("...")) -- for cmd/<dir> -- must all be
@@ -212,9 +215,27 @@ mcp_full="$(render_only mcp-deployment.yaml "${everything[@]}")"
 assert_renders_env "mcp" "$mcp_full" mcp
 [[ "$(env_value "$(render_only mcp-deployment.yaml "${base[@]}" --set mcp.enabled=true --set mcp.httpAddr=:9191)" MCP_ADDR)" == ":9191" ]] || fail "mcp.httpAddr does not reach MCP_ADDR"
 
-# Both components together: each labelled, each Service selecting exactly its own.
-together="$(render "${base[@]}" --set mcp.enabled=true)"
-for component in api mcp; do
+# --- the optional frontend component (returns_mfe remote) -------------------------
+# Its own Deployment + ClusterIP Service, labelled component=frontend; nginx
+# health probes; NO env (a static SPA that reads its API origin at runtime
+# from the console's /config.json -- nothing about it is configured here);
+# never a NodePort, ingress or route (the Nginx web gateway owns the path).
+fe_dep="$(render_only frontend-deployment.yaml "${base[@]}" --set frontend.enabled=true)"
+fe_svc="$(render_only frontend-service.yaml "${base[@]}" --set frontend.enabled=true)"
+grep -q 'app.kubernetes.io/component: frontend' <<<"$fe_dep" || fail "the frontend Deployment is not labelled component=frontend"
+grep -A1 'selector:' <<<"$fe_svc" >/dev/null && grep -q 'app.kubernetes.io/component: frontend' <<<"$fe_svc" || fail "the frontend Service must select component=frontend"
+grep -q 'path: /healthz' <<<"$fe_dep" || fail "the frontend container must probe /healthz"
+if grep -qE '^(        env:|          env:)' <<<"$fe_dep"; then
+  fail "the frontend Deployment must render no env (its API origin is runtime /config.json)"
+fi
+if ! grep -q 'type: ClusterIP' <<<"$fe_svc"; then
+  fail "the frontend Service must stay ClusterIP (the web gateway owns host exposure)"
+fi
+no_mode "frontend Deployment" "$fe_dep"
+
+# All components together: each labelled, each Service selecting exactly its own.
+together="$(render "${base[@]}" --set mcp.enabled=true --set frontend.enabled=true)"
+for component in api mcp frontend; do
   grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "$component was not rendered when every component is enabled"
 done
 
