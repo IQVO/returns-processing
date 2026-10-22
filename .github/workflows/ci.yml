@@ -412,6 +412,58 @@ jobs:
       - name: Architecture fitness tests
         run: go test ./internal/architecture/... -v
 
+  # returns-mfe (web/) is a Module Federation remote consumed by the
+  # warehouse-console shell; it depends on @warehouse/ui-kit via
+  # `file:../../warehouse-ui-kit`, so warehouse-ui-kit is checked out as a
+  # SIBLING directory here (matching warehouse-console's own CI shape) so that
+  # relative path resolves the same way it does on a contributor's machine.
+  # lint + typecheck (tsc -b) + vitest unit/component tests + production build,
+  # then the web/Dockerfile image build (the image warehouse-infra builds for
+  # `frontend_remote`) and a smoke check that nginx serves remoteEntry.js.
+  # Plain pull_request condition on purpose: no paths filter and no hashFiles
+  # at job level (it evaluates before checkout and silently skips the job).
+  # ============================================================
+  # CLASSIFICATION: UNIT TESTING (frontend remote) + PACKAGING VALIDATION
+  # ============================================================
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: returns-processing/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: returns-processing
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: IQVO/warehouse-ui-kit
+          ref: develop
+          path: warehouse-ui-kit
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+      - run: npm ci && npm run build
+        working-directory: warehouse-ui-kit
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -b
+      - run: npm test
+      - run: npm run build
+      - name: Build the frontend image (web/Dockerfile, ui-kit as a named build context)
+        run: docker build --build-context uikit=../../warehouse-ui-kit -t returns-processing-frontend:ci .
+      - name: Smoke check (nginx serves /healthz and the federation remoteEntry.js)
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name returns-fe -p 18410:8080 returns-processing-frontend:ci
+          trap 'docker stop returns-fe >/dev/null' EXIT
+          for _ in $(seq 1 20); do
+            curl -fsS http://localhost:18410/healthz && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null -w 'remoteEntry.js -> %{http_code}\n' http://localhost:18410/remoteEntry.js
+
   # ============================================================
   # CLASSIFICATION: PUBLISH (Docker image) -- push-to-main only
   # ============================================================
