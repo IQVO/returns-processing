@@ -140,11 +140,13 @@ func TestRelay_RealPostgresAndKafka_PublishesTheExactEnvelopes(t *testing.T) {
 	defer cancel()
 
 	eventsTopic := kafkatest.Topic(t, outboundkafka.TopicEvents)
+	analyticsTopic := kafkatest.Topic(t, outboundkafka.TopicAnalytics)
 	brokers := kafkatest.Brokers(t)
 	pool := pgtest.NewPool(t)
 
 	enc := outboundkafka.NewEncoder()
 	enc.EventsTopic = eventsTopic
+	enc.AnalyticsTopic = analyticsTopic
 
 	pub := postgres.NewOutbox(pool)
 	pub.NewID = ids(
@@ -192,6 +194,16 @@ func TestRelay_RealPostgresAndKafka_PublishesTheExactEnvelopes(t *testing.T) {
 	assertConsumedGolden(t, got[2], "rcpt-1", "return_line_inspected.golden.json")
 	assertConsumedGolden(t, got[3], "disp-1", "disposition_decided.golden.json")
 	assertConsumedGolden(t, got[4], "disp-1", "return_line_staged.golden.json")
+
+	// ADR 0007: the SAME five occurrences also land on the analytics topic —
+	// the same goldens with the analytics dataschema segment, byte-identical
+	// payload, id, type, subject and key.
+	twin := kafkatest.ReadN(t, analyticsTopic, 5, 30*time.Second)
+	assertConsumedGolden(t, twin[0], "rma-1", "return_authorized.analytics.golden.json")
+	assertConsumedGolden(t, twin[1], "rcpt-1", "return_receipt_opened.analytics.golden.json")
+	assertConsumedGolden(t, twin[2], "rcpt-1", "return_line_inspected.analytics.golden.json")
+	assertConsumedGolden(t, twin[3], "disp-1", "disposition_decided.analytics.golden.json")
+	assertConsumedGolden(t, twin[4], "disp-1", "return_line_staged.analytics.golden.json")
 }
 
 // poisonPayload is an outbox row the encoder refuses: an event name the
@@ -207,6 +219,7 @@ func TestRelay_DeadLettersPoisonRowAndLaterRowsStillPublish(t *testing.T) {
 	defer cancel()
 
 	eventsTopic := kafkatest.Topic(t, outboundkafka.TopicEvents)
+	analyticsTopic := kafkatest.Topic(t, outboundkafka.TopicAnalytics)
 	dlqTopic := kafkatest.Topic(t, outboundkafka.TopicDLQ)
 	brokers := kafkatest.Brokers(t)
 	pool := pgtest.NewPool(t)
@@ -224,7 +237,7 @@ func TestRelay_DeadLettersPoisonRowAndLaterRowsStillPublish(t *testing.T) {
 	}
 
 	enc := outboundkafka.NewEncoder()
-	enc.EventsTopic, enc.DLQTopic = eventsTopic, dlqTopic
+	enc.EventsTopic, enc.AnalyticsTopic, enc.DLQTopic = eventsTopic, analyticsTopic, dlqTopic
 	sink := outboundkafka.NewRelaySink(brokers)
 	t.Cleanup(func() { _ = sink.Close() })
 	relay := postgres.NewOutboxRelay(pool, enc, sink,
@@ -264,6 +277,10 @@ func TestRelay_DeadLettersPoisonRowAndLaterRowsStillPublish(t *testing.T) {
 	// The good row behind the poison one still published, exactly.
 	good := kafkatest.ReadN(t, eventsTopic, 1, 30*time.Second)[0]
 	assertConsumedGolden(t, good, "rma-2", "return_authorization_rejected.golden.json")
+
+	// ... and its analytics twin did too (ADR 0007).
+	goodTwin := kafkatest.ReadN(t, analyticsTopic, 1, 30*time.Second)[0]
+	assertConsumedGolden(t, goodTwin, "rma-2", "return_authorization_rejected.analytics.golden.json")
 }
 
 // stubSink is a switchable RelaySink double: it fails every send while fail
@@ -393,8 +410,25 @@ func TestRelay_AttemptCapExcludesRowAfterNFailures(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("pass after re-arm = (%d, %v), want (1, nil)", n, err)
 	}
-	if len(sink.sent) != 1 || sink.sent[0].EventType != "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized" {
-		t.Fatalf("sent = %+v, want the re-armed row's message", sink.sent)
+	// One claimed row now sends TWO messages (ADR 0007): the integration
+	// message and its analytics twin, same id, type, subject and key.
+	if len(sink.sent) != 2 {
+		t.Fatalf("sent = %d messages, want 2 (integration + analytics twin): %+v", len(sink.sent), sink.sent)
+	}
+	const wantType = "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized"
+	for i, m := range sink.sent {
+		if m.EventType != wantType || string(m.Key) != "rma-1" ||
+			m.EventID != "9a7d2e64-1b3f-4c8a-9d5e-2f6b8a4c1e70" {
+			t.Fatalf("sent[%d] = %+v, want the re-armed row's message", i, m)
+		}
+	}
+	if sink.sent[0].Topic != outboundkafka.TopicEvents ||
+		sink.sent[0].DataSchema != "urn:warehouse:returns-processing:events:ReturnAuthorized:v1" {
+		t.Fatalf("sent[0] = %+v, want the integration message", sink.sent[0])
+	}
+	if sink.sent[1].Topic != outboundkafka.TopicAnalytics ||
+		sink.sent[1].DataSchema != "urn:warehouse:returns-processing:analytics:ReturnAuthorized:v1" {
+		t.Fatalf("sent[1] = %+v, want the analytics twin", sink.sent[1])
 	}
 	if c := pgtest.Count(t, pool, "outbox"); c != 0 {
 		t.Fatalf("outbox has %d rows after the re-armed send, want 0", c)

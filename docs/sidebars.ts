@@ -31,6 +31,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'operations/configuration',
         'operations/observability',
+        'operations/analytics',
         'operations/troubleshooting',
       ],
     },

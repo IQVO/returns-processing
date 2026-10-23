@@ -1,0 +1,21 @@
+{
+  "specversion": "1.0",
+  "id": "9a7d2e64-1b3f-4c8a-9d5e-2f6b8a4c1e70",
+  "source": "/warehouse/returns-processing",
+  "type": "com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized",
+  "subject": "rma-1",
+  "time": "2026-10-21T09:30:00Z",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:warehouse:returns-processing:analytics:ReturnAuthorized:v1",
+  "data": {
+    "rma_id": "rma-1",
+    "order_id": "ord-7c9e",
+    "line_no": 3,
+    "sku": "SKU-BOOK-0001",
+    "quantity": 2,
+    "site_id": "site-1",
+    "reason_code": "DAMAGED",
+    "window_ends_at": "2026-10-21T11:30:00Z",
+    "authorized_at": "2026-10-21T09:30:00Z"
+  }
+}

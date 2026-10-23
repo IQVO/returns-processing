@@ -1,0 +1,82 @@
+{{- /*
+Kong plugins owned by this application's chart.
+
+Fleet decision (2026-10-13): ALL Kong configuration — routes AND plugins —
+belongs to the application's Helm chart, not warehouse-infra Terraform.
+Chart-rendered objects are Helm/ArgoCD reconciled forever, so a cluster
+rebuild cannot silently drop them.
+
+Three plugins, one per concern, attached per-route via the
+`konghq.com/plugins` annotation on this chart's own HTTPRoute template:
+
+  cors          — the split localhost edge: assets on http://localhost, APIs
+                  on http://localhost:8000 are different origins, so every
+                  browser call is cross-origin. Exact origin only, NEVER "*"
+                  — endpoints are unauthenticated.
+  prometheus    — per-route RED metrics on Kong's :8100 status listener.
+  opentelemetry — OTLP traces to the fleet collector. NOTE: this plugin ALSO
+                  needs Kong itself started with KONG_TRACING_INSTRUMENTATIONS
+                  (set on the kong release in warehouse-infra).
+
+NO auth plugin, deliberately: authentication/authorization was removed
+fleet-wide and the standing decision is that the gateway adds none.
+
+All three default `enabled: false` here and are switched on by
+warehouse-infra's values, so this chart stays installable standalone.
+*/ -}}
+{{- range $name, $cfg := .Values.kongPlugins }}
+{{- if $cfg.enabled }}
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ printf "%s-%s" (include "returns-processing.fullname" $) $name }}
+  labels:
+    {{- include "returns-processing.labels" $ | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: kong
+{{- if eq $name "cors" }}
+plugin: cors
+config:
+  origins:
+    - {{ $cfg.origin | quote }}
+  methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  headers:
+    - Accept
+    - Content-Type
+    - Origin
+    # A custom request header is not CORS-safelisted: the commands (triage,
+    # assign, resolve, ...) POST with an Idempotency-Key header and the
+    # preflight must allow it or the browser blocks the call before it
+    # reaches Kong.
+    - Idempotency-Key
+  exposed_headers:
+    - Content-Length
+  credentials: false
+  max_age: 3600
+  preflight_continue: false
+{{- else if eq $name "prometheus" }}
+plugin: prometheus
+config:
+  per_consumer: false
+  status_code_metrics: true
+  latency_metrics: true
+  bandwidth_metrics: true
+  upstream_health_metrics: true
+{{- else if eq $name "opentelemetry" }}
+plugin: opentelemetry
+config:
+  traces_endpoint: {{ $cfg.tracesEndpoint | quote }}
+  resource_attributes:
+    service.name: {{ printf "%s-kong" (include "returns-processing.fullname" $) | quote }}
+  propagation:
+    default_format: w3c
+{{- end }}
+---
+{{- end }}
+{{- end }}

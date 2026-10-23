@@ -1,0 +1,18 @@
+{
+  "specversion": "1.0",
+  "id": "7c9e4b1a-5d38-4f2c-b6e9-0a4d7c3f8e21",
+  "source": "/warehouse/returns-processing",
+  "type": "com.warehouse.wms.returns-processing.returnreceipt.UnexpectedReturnReceived",
+  "subject": "rcpt-1",
+  "time": "2026-10-21T10:00:00Z",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:warehouse:returns-processing:analytics:UnexpectedReturnReceived:v1",
+  "data": {
+    "receipt_id": "rcpt-1",
+    "line_no": 2,
+    "sku": "SKU-X",
+    "quantity": 1,
+    "site_id": "site-1",
+    "received_at": "2026-10-21T10:00:00Z"
+  }
+}

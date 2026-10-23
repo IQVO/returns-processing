@@ -33,8 +33,11 @@ existing one is never mutated.
 ## Published
 
 Topic `warehouse.returns-processing.events`, written by the outbox relay only
-([ADR 0005](/docs/adr/0005-transactional-outbox-and-relay)). An analytics mirror topic
-(`warehouse.returns-processing.analytics`) is declared **planned, not built** — no consumer exists.
+([ADR 0005](/docs/adr/0005-transactional-outbox-and-relay)). Every event is
+also mirrored on `warehouse.returns-processing.analytics` (same `id`, same
+payload, analytics dataschema), consumed only by this service's own projector
+([ADR 0007](/docs/adr/0007-analytics-read-side); see
+[Analytics](/docs/operations/analytics)).
 
 | Type suffix | Raised | Payload (`data`) |
 | --- | --- | --- |

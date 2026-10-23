@@ -50,6 +50,40 @@ service:
   port: 80
   targetPort: 8080
 
+# --- Gateway API (the OLTP route through Kong) ---
+# Fleet decision (2026-10-13): ALL Kong configuration — routes AND plugins —
+# belongs to the application's Helm chart, not warehouse-infra Terraform
+# (chart-rendered objects are Helm/ArgoCD reconciled forever). This route
+# exposes the api Service at /api/returns-processing on the platform
+# Gateway, prefix stripped (the service serves /returns, /dispositions ...
+# at the root). Off by default: warehouse-infra enables it with the real
+# parentRefs (the platform Gateway) and path.
+gatewayApi:
+  enabled: false
+  parentRefs:
+    - name: ""
+      namespace: ""
+      sectionName: "http"
+  hosts:
+    - path: /
+      pathType: PathPrefix
+  stripPath: true
+
+# Kong plugins rendered by THIS chart (kong-plugins.yaml) and attached to the
+# HTTPRoute above (and the MCP route) via the konghq.com/plugins annotation.
+# Defaults off; warehouse-infra's values switch them on (prometheus so the
+# Kong metrics rows light up, opentelemetry for traces, cors for the split
+# localhost edge). NO auth plugin here, ever.
+kongPlugins:
+  cors:
+    enabled: false
+    origin: "http://localhost"
+  prometheus:
+    enabled: false
+  opentelemetry:
+    enabled: false
+    tracesEndpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
+
 resources:
   limits:
     cpu: 500m
@@ -175,6 +209,16 @@ mcp:
     type: ClusterIP
     port: 8090
     targetPort: 8090
+  # Kong exposure of the MCP server (mcp-route.yaml): host path
+  # /api/mcp/returns-processing rewritten to the SDK's /mcp endpoint.
+  # Off by default; warehouse-infra turns it on with the real parentRefs.
+  route:
+    enabled: false
+    path: "/api/mcp/returns-processing"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
   extraEnv: []
   resources:
     limits:
@@ -183,6 +227,69 @@ mcp:
     requests:
       cpu: 100m
       memory: 128Mi
+
+# --- Analytics read side (ADR 0007) ---
+# The returns data product: the projector (cmd/returns-projector, the ONLY
+# writer of the analytical database, consuming the analytics topic
+# warehouse.returns-processing.analytics) and the read-only reports binary
+# (cmd/returns-reports, GET /reports/disposition-mix, /reports/value-recovery,
+# /reports/return-cycle-time and /reports/freshness). DISABLED by default:
+# the default render is unchanged.
+#
+# Enabling it renders the projector Deployment (component
+# analytics-projector, /healthz + /readyz on :8091, no Service) and the
+# reports Deployment + Service <fullname>-reports:80 (component
+# analytics-reports, :8092), plus a Secret with ANALYTICS_DATABASE_URL when
+# analytics.url is set. The chart refuses to render analytics without a DSN
+# source (analytics.url or analytics.existingSecret) or without a consumer
+# group: the binaries exit at boot otherwise (crash-loop). Kafka brokers are
+# already mandatory for every render of this chart.
+#
+# Deliberately NOT HPA-scalable: the projector keeps per-process
+# consumer/offset state and the reports Service has no session affinity --
+# replica counts are fixed values.
+analytics:
+  enabled: false
+  # The analytical database is SEPARATE from database.* (OLTP): the
+  # projector has no credentials on OLTP data and the reports pool is
+  # read-only. Direct DSN (no PgBouncer): the projector runs the embedded
+  # analytical migrations through it.
+  url: ""
+  existingSecret: ""
+  existingSecretKey: "ANALYTICS_DATABASE_URL"
+  # ANALYTICS_CONSUMER_GROUP: the projector's STABLE consumer group (no
+  # default in the binary): a rescheduled pod resumes from its committed
+  # offsets, and a brand-new group replays from the earliest retained offset
+  # (the backfill).
+  consumerGroup: "returns-processing-analytics"
+  projector:
+    replicaCount: 1
+    # ADMIN_ADDR (/healthz and /readyz) and its container port.
+    adminAddr: ":8091"
+    adminPort: 8091
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    extraEnv: []
+  reports:
+    replicaCount: 1
+    httpAddr: ":8092"
+    service:
+      type: ClusterIP
+      port: 80
+      targetPort: 8092
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    extraEnv: []
 
 # --- frontend (Module Federation REMOTE `returns_mfe`) ---
 # The operator SPA remote, built from web/ and served by its own
