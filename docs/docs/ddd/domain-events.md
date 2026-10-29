@@ -25,7 +25,7 @@ aggregate stay ordered on one partition. Everything leaves through the transacti
 | Event | Full type | Key and subject | Raised by |
 | --- | --- | --- | --- |
 | ReturnAuthorized | `com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorized` | rmaId | `AuthorizeReturn` (REST `POST /returns`) |
-| ReturnAuthorizationRejected | `com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorizationRejected` | rmaId | `AuthorizeReturn`, on a decided rejection |
+| ReturnAuthorizationRejected | `com.warehouse.wms.returns-processing.returnauthorization.ReturnAuthorizationRejected` | rmaId | the domain's `Reject`; no v1 publisher path — a refusal persists nothing (see the note below) |
 | ReturnReceiptOpened | `com.warehouse.wms.returns-processing.returnreceipt.ReturnReceiptOpened` | receiptId | `OpenReturnReceipt` (REST `POST /returns/{rmaId}/receipts`) |
 | UnexpectedReturnReceived | `com.warehouse.wms.returns-processing.returnreceipt.UnexpectedReturnReceived` | receiptId | `OpenReturnReceipt`, one per UNEXPECTED line |
 | ReturnLineInspected | `com.warehouse.wms.returns-processing.returnreceipt.ReturnLineInspected` | receiptId | `InspectReturnLine` |
@@ -43,6 +43,12 @@ aggregate stay ordered on one partition. Everything leaves through the transacti
 | ReturnLineInspected | `receipt_id`, `line_no`, `sku`, `quantity`, `grade` (`A`/`B`/`C`/`SCRAP`), `reason_codes:[]`, `inspected_at` |
 | DispositionDecided | `disposition_id`, `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `outcome` (`RESTOCK`/`REFURBISH`/`LIQUIDATE`/`DISPOSE`/`RTV`), `policy_version`, `supersedes` (nullable), `reason` (nullable), `decided_at` |
 | ReturnLineStaged | `receipt_id`, `line_no`, `sku`, `quantity`, `condition` (`"Good"`), `received_at`, `rma_id`, `disposition_id`, `site_id` |
+
+Publisher-path note: `ReturnAuthorizationRejected` is raised by the domain's `Reject` and sits in
+the catalogue (ADR 0004), but **no v1 code path publishes it**: `AuthorizeReturn` decides
+synchronously in one transaction and a refusal returns the typed domain error — nothing is
+persisted, nothing is published. The event gains a publisher with a future async decision path
+(ADR 0002 keeps `REQUESTED` for it).
 
 Payload rules: `ReturnLineStaged.data` is inbound-receiving's `ReceiptLineReceived` shape plus
 `rma_id`, `disposition_id`, `site_id` — inventory-storage consumes it into its staged-receipt use
