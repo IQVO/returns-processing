@@ -6,10 +6,10 @@ import apiSidebar from './docs/api-reference/rest/sidebar';
 
 /**
  * Top-level categories follow the shared warehouse-systems documentation
- * layout: Overview, Operations, MCP, Domain-Driven Design, API Reference and
- * Architecture Decision Records. The ADR files live in docs/adr/ and are
- * served by the second docs plugin instance (id: 'adr'), hence the plain
- * links.
+ * layout: Overview, Operations, Development, MCP, Domain-Driven Design, API
+ * Reference and Architecture Decision Records. The ADR files live in
+ * docs/adr/ and are served by the second docs plugin instance (id: 'adr'),
+ * hence the plain links.
  */
 const sidebars: SidebarsConfig = {
   docsSidebar: [
@@ -42,16 +42,29 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Development',
+      items: ['development/testing'],
+    },
+    {
+      type: 'category',
       label: 'Domain-Driven Design',
       link: {type: 'doc', id: 'ddd/ubiquitous-language'},
       items: [
+        'ddd/use-cases',
         {
           type: 'category',
           label: 'DDD artifacts (ddd-crew)',
           link: {type: 'doc', id: 'ddd/bounded-context-canvas'},
           items: [
+            'ddd/core-domain-chart',
             'ddd/bounded-context-canvas',
+            'ddd/context-map',
             'ddd/aggregate-design-canvas',
+            'ddd/domain-message-flow',
+            'ddd/eventstorming',
+            'ddd/class-diagram',
+            'ddd/entity-relationship',
+            'ddd/sequence-diagrams',
             'ddd/domain-events',
           ],
         },
