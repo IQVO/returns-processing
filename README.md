@@ -1,5 +1,7 @@
 # returns-processing
 
+[![CI](https://github.com/IQVO/returns-processing/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/IQVO/returns-processing/actions/workflows/ci.yml?query=branch%3Adevelop) [![coverage gate](https://img.shields.io/badge/coverage%20gate-90%25-brightgreen)](https://github.com/IQVO/returns-processing/blob/develop/Makefile) [![Go](https://img.shields.io/badge/go-1.27.3-00ADD8?logo=go&logoColor=white)](https://github.com/IQVO/returns-processing/blob/develop/go.mod) [![docs](https://img.shields.io/badge/docs-iqvo.github.io-blue)](https://iqvo.github.io/returns-processing/) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/IQVO/returns-processing/blob/develop/LICENSE)
+
 The **Returns Processing** bounded context of the `warehouse-systems` fleet — a
 WMS-tier **Supporting Subdomain**. It authorizes returns against shipped order
 lines, receives and grades the returned goods, decides each line's disposition
