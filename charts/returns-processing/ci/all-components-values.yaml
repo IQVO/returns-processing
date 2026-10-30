@@ -1,5 +1,5 @@
 # Used by `helm lint` / `ct lint`: every optional value and component set at
-# once (api + mcp + analytics projector/reports + frontend), so a template
+# once (api + mcp + a2a + analytics projector/reports + frontend), so a template
 # that renders alone but collides with another is caught by `helm lint`.
 database:
   existingSecret: "returns-processing-db"
@@ -14,6 +14,14 @@ config:
   orderLinesConsumerGroup: "returns-processing-order-lines"
   manifestConsumerGroup: "returns-processing-manifest"
 mcp:
+  enabled: true
+  route:
+    enabled: true
+    parentRefs:
+      - name: warehouse-gateway
+        namespace: kong
+        sectionName: http
+a2a:
   enabled: true
   route:
     enabled: true

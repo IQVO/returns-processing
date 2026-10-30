@@ -43,7 +43,10 @@ WORKDIR /app
 # filesystem read-only. Logs go to stdout.
 COPY --from=build --chown=app:app /out/ ./
 USER 1000
-EXPOSE 8080
+# 8080 is cmd/api; the chart's optional components listen on 8090 (cmd/mcp),
+# 8092 (cmd/returns-reports) and 8093 (cmd/a2a).
+EXPOSE 8080 8093
 # cmd/api is the service's main binary (HTTP on :8080). Additional cmd/*
-# binaries are run by the chart with `command: ["/app/<dirname>"]`.
+# binaries (mcp, a2a, returns-projector, returns-reports) are run by the chart
+# with `command: ["/app/<dirname>"]`.
 ENTRYPOINT ["./api"]

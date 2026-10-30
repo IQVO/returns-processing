@@ -56,6 +56,19 @@ is liveness only.
 
 It wires **no** write use case, no outbox, no relay, no consumers and no Kafka client at all.
 
+## `cmd/a2a`
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DATABASE_URL` | — | **required**; refuses to boot without it (no in-memory mode) |
+| `A2A_AGENT_URL` | — | **required**; absolute http(s) URL of the JSON-RPC endpoint, advertised on the Agent Card (the chart defaults it to the in-cluster Service DNS name, override with `a2a.agentUrl`) |
+| `MIGRATIONS_DATABASE_URL` | `DATABASE_URL` | as for `cmd/mcp` |
+| `A2A_ADDR` | `:8093` | listen address (serves JSON-RPC at `/` and `/a2a`, the card at `/.well-known/agent-card.json`, open `GET /healthz`) |
+| `LOG_LEVEL` | `info` | as above |
+
+Read-only like `cmd/mcp`: no write use case, no outbox, no relay, no consumers, no Kafka client
+([ADR 0008](/docs/adr/0008-a2a-inbound-adapter)).
+
 ## Fixed values (not configurable)
 
 | Value | What |
@@ -64,7 +77,7 @@ It wires **no** write use case, no outbox, no relay, no consumers and no Kafka c
 | Consumed topics `warehouse.{product-master,order-management,fulfillment}.events` (+ `.dlq`) | pinned in ADR 0003 |
 | Relay batch size 100, backoff cap 5 min | `postgres.NewOutboxRelay` defaults (no env) |
 | `content-type: application/cloudevents+json; charset=UTF-8` | every Kafka message |
-| No auth on REST or MCP | fleet decision 2026-09-11, fitness-tested |
+| No auth on REST, MCP or A2A | fleet decision 2026-09-11, fitness-tested |
 
 ## Helm chart
 
@@ -91,6 +104,10 @@ kafka:
 
 mcp:
   enabled: false               # the read-only MCP Deployment + Service, off by default
+
+a2a:
+  enabled: false               # the read-only A2A Deployment + Service (port 8093), off by default
+  agentUrl: ""                 # A2A_AGENT_URL; empty = the in-cluster Service DNS name
 ```
 
 The chart refuses any `*_MODE` value, mounts the env ConfigMap via `envFrom`, keeps `DATABASE_URL`
