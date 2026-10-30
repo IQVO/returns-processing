@@ -13,7 +13,8 @@ stops being true.
 
 Components: api (always), mcp (default off; the read-only MCP server of
 cmd/mcp: get_return, list_returns_by_order, get_disposition_policy over
-Streamable HTTP), analytics (default off; the ADR 0007 read side --
+Streamable HTTP), a2a (default off; the read-only Agent2Agent server of
+cmd/a2a: return_status, disposition_policy over JSON-RPC, ADR 0008), analytics (default off; the ADR 0007 read side --
 cmd/returns-projector, the analytical database's only writer, and
 cmd/returns-reports, the read-only :8092; the projector gets NO Service,
 its :8091 is probes only) and frontend (default off; the returns_mfe Module
@@ -46,6 +47,7 @@ ENABLE_EVERYTHING = BASE + [
     "--set", "config.outboxRelayInterval=500ms",
     "--set", "config.shutdownDrainDelay=5s",
     "--set", "mcp.enabled=true",
+    "--set", "a2a.enabled=true",
     "--set", "frontend.enabled=true",
     "--set", "analytics.enabled=true",
     "--set", "analytics.url=postgres://u@example.invalid:5432/analytics",
@@ -112,12 +114,13 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
     expected_deployments = {
         RELEASE,
         f"{RELEASE}-mcp",
+        f"{RELEASE}-a2a",
         f"{RELEASE}-frontend",
         f"{RELEASE}-projector",
         f"{RELEASE}-reports",
     }
     # The projector gets NO Service: its :8091 admin port is probes only.
-    expected_services = {RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-frontend", f"{RELEASE}-reports"}
+    expected_services = {RELEASE, f"{RELEASE}-mcp", f"{RELEASE}-a2a", f"{RELEASE}-frontend", f"{RELEASE}-reports"}
     if set(deployments) != expected_deployments:
         failures.append(f"expected Deployments {sorted(expected_deployments)}, got {sorted(deployments)}")
     if set(services) != expected_services:
@@ -126,6 +129,7 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
     for name, component in (
         (RELEASE, "api"),
         (f"{RELEASE}-mcp", "mcp"),
+        (f"{RELEASE}-a2a", "a2a"),
         (f"{RELEASE}-frontend", "frontend"),
         (f"{RELEASE}-reports", "analytics-reports"),
     ):
@@ -163,6 +167,7 @@ def check_selectors(docs: list[dict], failures: list[str]) -> None:
 
     check_env(deployments.get(RELEASE), failures)
     check_mcp(deployments.get(f"{RELEASE}-mcp"), failures)
+    check_a2a(deployments.get(f"{RELEASE}-a2a"), failures)
     check_analytics(deployments.get(f"{RELEASE}-projector"), deployments.get(f"{RELEASE}-reports"), failures)
     check_frontend(deployments.get(f"{RELEASE}-frontend"), failures)
 
@@ -211,6 +216,31 @@ def check_mcp(dep: dict | None, failures: list[str]) -> None:
     for want in ("DATABASE_URL", "MIGRATIONS_DATABASE_URL", "MCP_ADDR", "LOG_LEVEL"):
         if want not in env:
             failures.append(f"the MCP Deployment does not render {want}")
+
+
+def check_a2a(dep: dict | None, failures: list[str]) -> None:
+    """The read-only A2A agent (ADR 0008): like the MCP server it never
+    relays, consumes or dials Kafka; A2A_AGENT_URL is mandatory and defaults
+    to this release's in-cluster Service DNS name."""
+    if dep is None:
+        failures.append("the a2a Deployment was not rendered")
+        return
+    if command_of(dep) != ["/app/a2a"]:
+        failures.append("the A2A Deployment must run /app/a2a")
+    env = set(env_names(dep))
+    stray = {
+        "KAFKA_BROKERS", "EVENT_PUBLISHER", "OUTBOX_RELAY_INTERVAL", "OUTBOX_MAX_ATTEMPTS", "SHUTDOWN_DRAIN_DELAY",
+        "PRODUCT_CLASSIFICATION_CONSUMER_GROUP", "ORDER_LINES_CONSUMER_GROUP", "MANIFEST_CONSUMER_GROUP",
+        *FORBIDDEN_ENV,
+    } & env
+    if stray:
+        failures.append(f"the A2A Deployment must not get Kafka/relay/consumer env (it never dials Kafka): {sorted(stray)}")
+    for want in ("DATABASE_URL", "MIGRATIONS_DATABASE_URL", "A2A_ADDR", "A2A_AGENT_URL", "LOG_LEVEL"):
+        if want not in env:
+            failures.append(f"the A2A Deployment does not render {want}")
+    url = env_value(dep, "A2A_AGENT_URL") or ""
+    if not url.startswith(f"http://{RELEASE}-a2a.") or not url.endswith(".svc.cluster.local:8093/"):
+        failures.append(f"A2A_AGENT_URL must default to the in-cluster Service DNS name, got {url!r}")
 
 
 def check_analytics(projector: dict | None, reports: dict | None, failures: list[str]) -> None:
@@ -268,7 +298,7 @@ def check_defaults(failures: list[str]) -> None:
     """Default values deploy the api only."""
     defaults = render(BASE)
     stray = [d["metadata"]["name"] for d in defaults
-             if d["metadata"]["name"].endswith(("-mcp", "-frontend", "-projector", "-reports"))]
+             if d["metadata"]["name"].endswith(("-mcp", "-a2a", "-frontend", "-projector", "-reports"))]
     if stray:
         failures.append(f"optional components rendered with default values: {stray}")
     kinds = sorted(d["kind"] for d in defaults if d["kind"] in {"Deployment", "Service"})
@@ -318,8 +348,8 @@ def main() -> int:
             print(f"FAIL: {f}")
         return 1
 
-    print("PASS: every Service selects exactly one Deployment (api, mcp, analytics-reports, frontend); mcp, "
-          "analytics and frontend are off by default; every cmd/api env var has a dedicated value and no *_MODE "
+    print("PASS: every Service selects exactly one Deployment (api, mcp, a2a, analytics-reports, frontend); mcp, "
+          "a2a, analytics and frontend are off by default; every cmd/api env var has a dedicated value and no *_MODE "
           "is rendered; the projector never gets OLTP env and the reports never dial Kafka; the frontend renders "
           "no env; the chart refuses to render without a database source, without brokers, with an empty consumer "
           "group or with a *_MODE injected through extraEnv")

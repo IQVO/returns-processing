@@ -28,3 +28,7 @@ exist yet shows as consumer retry logs, not as unreadiness.
 
 MCP server (read-only, no auth): {{ include "returns-processing.mcpFullname" . }}:{{ .Values.mcp.service.port }}/mcp (Streamable HTTP).
 {{- end }}
+{{- if .Values.a2a.enabled }}
+
+A2A server (read-only, no auth): {{ include "returns-processing.a2aFullname" . }}:{{ .Values.a2a.service.port }} (JSON-RPC at / and /a2a, Agent Card at /.well-known/agent-card.json).
+{{- end }}

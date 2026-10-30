@@ -139,6 +139,11 @@ nothing reads.
 {{- fail (printf "mcp.extraEnv sets %s — no *_MODE variable exists in this service's contract (ADR 0001: real Postgres and real Kafka are the only runtime)." .name) -}}
 {{- end -}}
 {{- end -}}
+{{- range .Values.a2a.extraEnv -}}
+{{- if hasSuffix "_MODE" (toString .name) -}}
+{{- fail (printf "a2a.extraEnv sets %s — no *_MODE variable exists in this service's contract (ADR 0001: real Postgres and real Kafka are the only runtime)." .name) -}}
+{{- end -}}
+{{- end -}}
 {{- range .Values.analytics.projector.extraEnv -}}
 {{- if hasSuffix "_MODE" (toString .name) -}}
 {{- fail (printf "analytics.projector.extraEnv sets %s — no *_MODE variable exists in this service's contract (ADR 0001: real Postgres and real Kafka are the only runtime)." .name) -}}
@@ -158,6 +163,16 @@ more than one component (tests/test_service_selectors.py).
 */}}
 {{- define "returns-processing.mcpFullname" -}}
 {{- include "returns-processing.fullname" . }}-mcp
+{{- end }}
+
+{{/*
+Fully qualified name of the optional a2a component (the Agent2Agent server of
+cmd/a2a, ADR 0008). Its own workload with its own app.kubernetes.io/component
+label; a Service never selects more than one component
+(tests/test_service_selectors.py).
+*/}}
+{{- define "returns-processing.a2aFullname" -}}
+{{- include "returns-processing.fullname" . }}-a2a
 {{- end }}
 
 {{/*

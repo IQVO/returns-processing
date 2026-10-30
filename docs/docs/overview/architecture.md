@@ -16,12 +16,14 @@ adapter. Only `cmd/` wires; the domain imports nothing internal but the domain
 ```
 cmd/api                 composition root: REST server, three Kafka consumers, outbox relay
 cmd/mcp                 composition root: read-only MCP server (Streamable HTTP :8090)
+cmd/a2a                 composition root: read-only A2A agent (JSON-RPC :8093, Agent Card)
 internal/domain/        returnauthorization, returnreceipt, disposition, shared
 internal/application/   use cases, ports, outbox payload, read views
 internal/adapters/
   inbound/http          chi router, RFC 7807 errors, Idempotency-Key middleware, readiness
   inbound/kafka         consume loop, the three consumers, dead-letter machinery
   inbound/mcp           the three read-only MCP tools
+  inbound/a2a           the two read-only A2A skills: return_status, disposition_policy
   kafka/cloudevents     the ONE CloudEvents build/decode helper
   outbound/postgres     repositories, local copies, outbox + relay, unit of work, migrations
   outbound/kafka        CloudEvents encoder, acks-all writer, relay sink
@@ -37,8 +39,9 @@ apis/                   openapi.yaml + asyncapi.yaml — the contracts CI lints 
 | --- | --- | --- |
 | `cmd/api` | REST `:8080`, the outbox relay, the three local-copy consumers | always everything; a consumer death is a process death (the pod restarts rather than serving on frozen copies) |
 | `cmd/mcp` | MCP over Streamable HTTP `:8090` (`MCP_ADDR`), open `GET /healthz` | read-only: no write use case, no outbox, no relay, no Kafka, no consumers |
+| `cmd/a2a` | A2A JSON-RPC at `/` and `/a2a` on `:8093` (`A2A_ADDR`), Agent Card at `/.well-known/agent-card.json`, open `GET /healthz` | read-only like `cmd/mcp`, same read use cases ([ADR 0008](/docs/adr/0008-a2a-inbound-adapter)) |
 
-Both refuse to boot without `DATABASE_URL`. There is no in-memory mode and no `*_MODE` toggle
+All three refuse to boot without `DATABASE_URL`. There is no in-memory mode and no `*_MODE` toggle
 anywhere (`TestRuntimeBinaryHasNoInMemoryAdapters`).
 
 ## Containers and components

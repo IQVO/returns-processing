@@ -51,7 +51,7 @@ stateDiagram-v2
 | Corrective policies | none: a wrong grade is corrected by overriding the resulting disposition, never by re-inspecting |
 | Throughput | low: one receipt per parcel |
 | Size | small header + a `lines` collection (the parcel's lines) |
-| Concurrency | optimistic `version`; opening against an RMA moves that RMA AUTHORIZED → RECEIVED in the same unit of work |
+| Concurrency | optimistic `version`. The domain carries the AUTHORIZED → RECEIVED transition (`MarkReceived`), but no v1 use case calls it — the receipt itself carries the arrival fact |
 | Repository | `ports.ReturnReceiptRepo` (Postgres `return_receipts` + `return_receipt_lines`) |
 
 ## Disposition (`internal/domain/disposition`) — the mutation-gate aggregate
