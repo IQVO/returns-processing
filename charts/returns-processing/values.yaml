@@ -228,6 +228,46 @@ mcp:
       cpu: 100m
       memory: 128Mi
 
+# --- A2A server ---
+# cmd/a2a: a READ-ONLY Agent2Agent (A2A) server over JSON-RPC/HTTP (skills
+# return_status, disposition_policy; the Agent Card at
+# /.well-known/agent-card.json; ADR 0008) on the same Postgres as the api. A
+# separate workload (component=a2a, Service <fullname>-a2a:8093); it never
+# writes, never dials Kafka and has no auth (fleet rule: the ClusterIP
+# boundary is the access control). DISABLED by default: the default render is
+# unchanged.
+a2a:
+  enabled: false
+  replicaCount: 1
+  httpAddr: ":8093"
+  # The absolute URL the Agent Card advertises (A2A_AGENT_URL, mandatory in
+  # the binary). Empty = this release's in-cluster Service DNS name,
+  # http://<fullname>-a2a.<namespace>.svc.cluster.local:8093/.
+  agentUrl: ""
+  service:
+    type: ClusterIP
+    port: 8093
+    targetPort: 8093
+  # Kong exposure of the A2A server (a2a-route.yaml): host path
+  # /api/a2a/returns-processing rewritten to /, so the card stays reachable at
+  # /api/a2a/returns-processing/.well-known/agent-card.json. Off by default;
+  # warehouse-infra turns it on with the real parentRefs.
+  route:
+    enabled: false
+    path: "/api/a2a/returns-processing"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
+  extraEnv: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
 # --- Analytics read side (ADR 0007) ---
 # The returns data product: the projector (cmd/returns-projector, the ONLY
 # writer of the analytical database, consuming the analytics topic

@@ -24,6 +24,23 @@ REST, a fresh `Idempotency-Key` on every write POST. Dev server `:4010`
 `/mfes/returns-processing/` (`web/Dockerfile`, chart `frontend.enabled`).
 Registration in the console shell is the console repo's change.
 
+## A2A agent
+
+`cmd/a2a` ([ADR 0008](docs/adr/0008-a2a-inbound-adapter.md)) is a read-only Agent2Agent server: a
+third driving adapter (`internal/adapters/inbound/a2a`) over the same read use cases as REST and
+MCP, built on `a2aproject/a2a-go/v2`. JSON-RPC at `/` and `/a2a` on `:8093` (`A2A_ADDR`), Agent
+Card at `/.well-known/agent-card.json`, `GET /healthz`; `DATABASE_URL` and the absolute
+`A2A_AGENT_URL` (advertised on the card) are mandatory. No auth, no writes, no Kafka.
+
+Two skills, called as a `SendMessage` data part `{"skill": "<id>", "arguments": {...}}`:
+
+- `return_status` (read): exactly one of `{rmaId}` or `{orderId}` — where a return stands.
+- `disposition_policy` (read): `{}` for the current policy or `{version}` for a declared one.
+
+Rejections come back in-band as RFC 7807 `problem`s (404/400/500, REST's slugs). In Kubernetes:
+Helm `a2a.enabled=true` (default `false`) renders `<release>-a2a` (ClusterIP, port 8093), exposed
+through Kong at `/api/a2a/returns-processing` when `a2a.route.enabled`.
+
 ## Status
 
 Service (domain, application, adapters), packaging (chart, Dockerfile, CI), this documentation
@@ -36,7 +53,7 @@ release and `warehouse-infra` registration (`docs/before-first-release.md` is th
 The Docusaurus site in `docs/` carries the full pack: overview (introduction, business context,
 architecture, quickstart), the ddd-crew artifacts (bounded-context canvas, aggregate design
 canvas, domain events, ubiquitous language), the [ADR index](docs/adr/index.md), operations
-(configuration, runbook, observability, troubleshooting), the MCP tools page, and the API
+(configuration, runbook, observability, troubleshooting), the MCP tools page, the A2A ADR, and the API
 reference. It publishes to GitHub Pages at `https://iqvo.github.io/returns-processing/` on every
 push to `main` (`docs.yml`); pull requests build it as a check.
 

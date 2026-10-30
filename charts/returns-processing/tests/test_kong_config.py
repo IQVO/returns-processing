@@ -19,6 +19,9 @@ This test is the sensor for that decision. It fails if:
     the console's command POSTs send,
   * the MCP route (mcp.route.enabled) does not rewrite its host prefix to the
     SDK's /mcp endpoint, or targets anything but the -mcp Service,
+  * the A2A route (a2a.route.enabled) does not rewrite its host prefix to /
+    (the JSON-RPC endpoint and the Agent Card both live at the root), or
+    targets anything but the -a2a Service,
   * defaults (no --set flags beyond the mandatory runtime values) render any
     Kong object at all — standalone installs without Kong must be unaffected.
 
@@ -62,6 +65,10 @@ ENABLE_KONG = MANDATORY + [
     "--set", "mcp.route.enabled=true",
     "--set", "mcp.route.parentRefs[0].name=warehouse-gateway",
     "--set", "mcp.route.parentRefs[0].namespace=kong",
+    "--set", "a2a.enabled=true",
+    "--set", "a2a.route.enabled=true",
+    "--set", "a2a.route.parentRefs[0].name=warehouse-gateway",
+    "--set", "a2a.route.parentRefs[0].namespace=kong",
 ]
 
 
@@ -79,8 +86,8 @@ def render(extra_args: list[str]) -> list[dict]:
 
 
 def check_routes(routes: list[dict], plugins: dict[str, dict], failures: list[str]) -> None:
-    if len(routes) != 2:
-        failures.append(f"enabled render must contain the api and the mcp HTTPRoute, got {len(routes)}")
+    if len(routes) != 3:
+        failures.append(f"enabled render must contain the api, the mcp and the a2a HTTPRoute, got {len(routes)}")
     if not plugins:
         failures.append("enabled render contains no KongPlugin at all")
     for r in routes:
@@ -99,6 +106,9 @@ def check_routes(routes: list[dict], plugins: dict[str, dict], failures: list[st
 def check_rule(name: str, rule: dict, failures: list[str]) -> None:
     if name.endswith("-mcp"):
         check_mcp_rule(name, rule, failures)
+        return
+    if name.endswith("-a2a"):
+        check_a2a_rule(name, rule, failures)
         return
     prefix = rule["matches"][0]["path"]["value"]
     if prefix != "/api/returns-processing":
@@ -122,6 +132,18 @@ def check_mcp_rule(name: str, rule: dict, failures: list[str]) -> None:
     backend = rule["backendRefs"][0]["name"]
     if backend != f"{RELEASE}-mcp":
         failures.append(f"HTTPRoute {name} targets {backend!r}, expected the {RELEASE}-mcp Service")
+
+
+def check_a2a_rule(name: str, rule: dict, failures: list[str]) -> None:
+    prefix = rule["matches"][0]["path"]["value"]
+    if prefix != "/api/a2a/returns-processing":
+        failures.append(f"HTTPRoute {name} matches {prefix!r}, expected '/api/a2a/returns-processing'")
+    rewrites = [f for f in rule.get("filters", []) if f.get("type") == "URLRewrite"]
+    if len(rewrites) != 1 or rewrites[0]["urlRewrite"]["path"].get("replacePrefixMatch") != "/":
+        failures.append(f"HTTPRoute {name} must rewrite its prefix to /, so the Agent Card stays reachable under it")
+    backend = rule["backendRefs"][0]["name"]
+    if backend != f"{RELEASE}-a2a":
+        failures.append(f"HTTPRoute {name} targets {backend!r}, expected the {RELEASE}-a2a Service")
 
 
 def check_plugins(plugins: dict[str, dict], failures: list[str]) -> None:

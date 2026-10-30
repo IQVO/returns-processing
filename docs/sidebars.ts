@@ -110,6 +110,11 @@ const sidebars: SidebarsConfig = {
           label: '0005 Outbox and relay',
           href: '/docs/adr/0005-transactional-outbox-and-relay',
         },
+        {
+          type: 'link',
+          label: '0008 A2A inbound adapter',
+          href: '/docs/adr/0008-a2a-inbound-adapter',
+        },
       ],
     },
   ],
