@@ -36,9 +36,9 @@ export function ReturnDetailRoute() {
  * One RMA and, from it, the whole physical reverse flow the API serves:
  * while AUTHORIZED, open the receipt the parcel arrived on (POST
  * /returns/{rmaId}/receipts), then grade each received line (POST
- * /receipts/{id}/lines/{n}/inspect), which decides the disposition in the
+ * /receipts/{id}/lines/{n}/inspections), which decides the disposition in the
  * same transaction, and optionally override that decision (POST
- * /dispositions/{id}/override). Every POST carries its own Idempotency-Key.
+ * /dispositions/{id}/overrides). Every POST carries its own Idempotency-Key.
  *
  * HONEST LIMIT (the API serves no receipt or disposition GET): the lines and
  * decisions below are what the write responses returned, kept in this screen.
@@ -319,7 +319,7 @@ function ReceiptPanel({
   );
 }
 
-/** Grade one line: POST /receipts/{id}/lines/{n}/inspect. The quantity is
+/** Grade one line: POST /receipts/{id}/lines/{n}/inspections. The quantity is
  *  optional (empty = the full received quantity). */
 function InspectForm({
   receipt,
@@ -423,7 +423,7 @@ function DispositionFacts({ disposition, overridden }: { disposition: Dispositio
   );
 }
 
-/** Override the decided disposition: POST /dispositions/{id}/override with a
+/** Override the decided disposition: POST /dispositions/{id}/overrides with a
  *  mandatory reason. The original decision is never mutated -- the override
  *  supersedes it. */
 function OverrideForm({
