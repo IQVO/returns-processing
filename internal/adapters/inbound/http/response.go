@@ -51,7 +51,7 @@ func decodeJSON(r *http.Request, dest any) error {
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	p := problemFor(err)
 	if p == internalProblem {
-		slog.ErrorContext(r.Context(), "request failed", "error", err, "method", logSafe(r.Method), "path", logSafe(r.URL.Path))
+		slog.ErrorContext(r.Context(), "request failed", "error", logSafe(err.Error()), "method", logSafe(r.Method), "path", logSafe(r.URL.Path))
 		writeProblem(w, r, p, "an unexpected error occurred")
 		return
 	}
