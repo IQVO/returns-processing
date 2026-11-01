@@ -99,7 +99,7 @@ func receiptLineFromWire(l openReceiptLineRequest) (usecases.ReceiptLine, error)
 }
 
 // inspectReturnLineRequest is the wire body of
-// POST /receipts/{receiptId}/lines/{lineNo}/inspect
+// POST /receipts/{receiptId}/lines/{lineNo}/inspections
 // (InspectReturnLineRequest). quantity is required in practice: the spec's
 // "defaults to the line's full received quantity" is NOT implemented (the
 // handler cannot read the line; see the drift note in the step report), so
@@ -110,7 +110,7 @@ type inspectReturnLineRequest struct {
 	ReasonCodes []string `json:"reasonCodes"`
 }
 
-// handleInspectReturnLine: POST /receipts/{receiptId}/lines/{lineNo}/inspect
+// handleInspectReturnLine: POST /receipts/{receiptId}/lines/{lineNo}/inspections
 // -> InspectReturnLine (200; the disposition is decided in the same unit of
 // work).
 func (s *Server) handleInspectReturnLine(w http.ResponseWriter, r *http.Request) {

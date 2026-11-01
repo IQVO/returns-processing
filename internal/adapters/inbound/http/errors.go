@@ -39,6 +39,7 @@ var internalProblem = problem{status: http.StatusInternalServerError, slug: "int
 // Problems the middleware writes itself, before any use case runs.
 var (
 	idempotencyKeyRequired = problem{status: http.StatusBadRequest, slug: "idempotency-key-required", title: "Idempotency-Key header is required"}
+	idempotencyKeyInvalid  = problem{status: http.StatusBadRequest, slug: "idempotency-key-invalid", title: "Idempotency-Key header is invalid"}
 	// idempotencyKeyReused is 409 Conflict in this service's spec (the
 	// Conflict response's idempotencyKeyReused example).
 	idempotencyKeyReused = problem{status: http.StatusConflict, slug: "idempotency-key-reused", title: "Idempotency-Key was already used with a different request"}

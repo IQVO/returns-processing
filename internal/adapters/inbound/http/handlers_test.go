@@ -167,7 +167,7 @@ func TestInspectReturnLineRoute(t *testing.T) {
 	rma := f.authorize("ord-7c9e")
 	receipt := f.openReceipt(rma)
 	const body = `{"grade":"B","quantity":2,"reasonCodes":["CUSTOMER_DAMAGE"]}`
-	raw := f.mustCall(http.MethodPost, "/receipts/"+receipt+"/lines/1/inspect", body, "k-i1", http.StatusOK)
+	raw := f.mustCall(http.MethodPost, "/receipts/"+receipt+"/lines/1/inspections", body, "k-i1", http.StatusOK)
 	m := decodeBody(t, raw)
 	if m["receiptId"] != receipt || m["lineNo"] != float64(1) || m["sku"] != "SKU-1" ||
 		m["grade"] != "B" || m["inspectedAt"] != "2026-10-21T09:00:00Z" {
@@ -185,27 +185,27 @@ func TestInspectReturnLineRoute(t *testing.T) {
 	}
 
 	// A line is inspected exactly once.
-	status, raw2, _ := f.call(http.MethodPost, "/receipts/"+receipt+"/lines/1/inspect", body, "k-i2")
+	status, raw2, _ := f.call(http.MethodPost, "/receipts/"+receipt+"/lines/1/inspections", body, "k-i2")
 	wantProblem(t, status, raw2, "line-already-inspected", "")
 	// An unknown receipt is 404 receipt-not-found; a bad line number is 400;
 	// a line the receipt does not hold is 404 naming it.
-	status, raw2, _ = f.call(http.MethodPost, "/receipts/rcpt-none/lines/1/inspect", body, "k-i3")
+	status, raw2, _ = f.call(http.MethodPost, "/receipts/rcpt-none/lines/1/inspections", body, "k-i3")
 	wantProblem(t, status, raw2, "receipt-not-found", "")
-	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+receipt+"/lines/x/inspect", body, "k-i4")
+	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+receipt+"/lines/x/inspections", body, "k-i4")
 	wantProblem(t, status, raw2, "malformed-request-body", "lineNo")
-	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+receipt+"/lines/9/inspect", body, "k-i8")
+	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+receipt+"/lines/9/inspections", body, "k-i8")
 	wantProblem(t, status, raw2, "receipt-not-found", "no line 9")
 	// A second receipt holds an UNEXPECTED line to inspect with fresh state.
 	second := f.mustCall(http.MethodPost, "/returns/"+rma+"/receipts",
 		`{"siteId":"WH1","lines":[{"lineNo":1,"sku":"SKU-9","quantity":3,"kind":"UNEXPECTED"}]}`, "k-second-receipt", http.StatusCreated)
 	secondID := stringField(t, second, "receiptId")
 	// An unknown grade and an omitted quantity are 400.
-	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+secondID+"/lines/1/inspect", `{"grade":"Z","quantity":1}`, "k-i5")
+	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+secondID+"/lines/1/inspections", `{"grade":"Z","quantity":1}`, "k-i5")
 	wantProblem(t, status, raw2, "invalid-grade", "")
-	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+secondID+"/lines/1/inspect", `{"grade":"A"}`, "k-i6")
+	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+secondID+"/lines/1/inspections", `{"grade":"A"}`, "k-i6")
 	wantProblem(t, status, raw2, "invalid-quantity", "")
 	// Inspecting more than received is 409.
-	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+secondID+"/lines/1/inspect", `{"grade":"A","quantity":9}`, "k-i7")
+	status, raw2, _ = f.call(http.MethodPost, "/receipts/"+secondID+"/lines/1/inspections", `{"grade":"A","quantity":9}`, "k-i7")
 	wantProblem(t, status, raw2, "inspected-exceeds-received", "")
 }
 
@@ -215,9 +215,9 @@ func TestOverrideDispositionRoute(t *testing.T) {
 	f := newFixture(t)
 	rma := f.authorize("ord-7c9e")
 	receipt := f.openReceipt(rma)
-	f.mustCall(http.MethodPost, "/receipts/"+receipt+"/lines/1/inspect", `{"grade":"B","quantity":2}`, "k-inspect", http.StatusOK)
+	f.mustCall(http.MethodPost, "/receipts/"+receipt+"/lines/1/inspections", `{"grade":"B","quantity":2}`, "k-inspect", http.StatusOK)
 
-	raw := f.mustCall(http.MethodPost, "/dispositions/disp-0001/override",
+	raw := f.mustCall(http.MethodPost, "/dispositions/disp-0001/overrides",
 		`{"outcome":"RTV","reason":"vendor accepts open-box returns this quarter"}`, "k-ov1", http.StatusOK)
 	m := decodeBody(t, raw)
 	if m["dispositionId"] != "disp-0002" || m["supersedes"] != "disp-0001" ||
@@ -225,9 +225,9 @@ func TestOverrideDispositionRoute(t *testing.T) {
 		t.Fatalf("override = %s", raw)
 	}
 
-	status, body, _ := f.call(http.MethodPost, "/dispositions/disp-none/override", `{"outcome":"RTV","reason":"x"}`, "k-ov2")
+	status, body, _ := f.call(http.MethodPost, "/dispositions/disp-none/overrides", `{"outcome":"RTV","reason":"x"}`, "k-ov2")
 	wantProblem(t, status, body, "disposition-not-found", "")
-	status, body, _ = f.call(http.MethodPost, "/dispositions/disp-0001/override", `{"outcome":"RTV","reason":"  "}`, "k-ov3")
+	status, body, _ = f.call(http.MethodPost, "/dispositions/disp-0001/overrides", `{"outcome":"RTV","reason":"  "}`, "k-ov3")
 	wantProblem(t, status, body, "override-reason-required", "")
 }
 

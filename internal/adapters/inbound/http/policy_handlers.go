@@ -9,13 +9,13 @@ import (
 )
 
 // overrideDispositionRequest is the wire body of
-// POST /dispositions/{dispositionId}/override (OverrideDispositionRequest).
+// POST /dispositions/{dispositionId}/overrides (OverrideDispositionRequest).
 type overrideDispositionRequest struct {
 	Outcome string `json:"outcome"`
 	Reason  string `json:"reason"`
 }
 
-// handleOverrideDisposition: POST /dispositions/{dispositionId}/override ->
+// handleOverrideDisposition: POST /dispositions/{dispositionId}/overrides ->
 // OverrideDisposition (200; the reason is mandatory, 400
 // override-reason-required when blank).
 func (s *Server) handleOverrideDisposition(w http.ResponseWriter, r *http.Request) {
