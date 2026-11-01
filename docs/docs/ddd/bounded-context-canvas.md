@@ -86,8 +86,8 @@ receipt nor lost.
 | `POST /returns` | command | operators, console | REST (`Idempotency-Key`) | authorize an RMA against the local copies |
 | `GET /returns/{rmaId}`, `GET /returns?orderRef=` | query | operators, console, agent | REST | reads |
 | `POST /returns/{rmaId}/receipts` | command | operators, console | REST (`Idempotency-Key`) | open a receipt; UNEXPECTED lines raise the case event |
-| `POST /receipts/{receiptId}/lines/{lineNo}/inspect` | command | operators | REST (`Idempotency-Key`) | grade; disposition decided in the same tx |
-| `POST /dispositions/{id}/override` | command | operators | REST (`Idempotency-Key`) | supersede with a mandatory reason |
+| `POST /receipts/{receiptId}/lines/{lineNo}/inspections` | command | operators | REST (`Idempotency-Key`) | grade; disposition decided in the same tx |
+| `POST /dispositions/{id}/overrides` | command | operators | REST (`Idempotency-Key`) | supersede with a mandatory reason |
 | `PUT /disposition-policies/{version}`, `GET /disposition-policies/current` | command / query | operators | REST (PUT takes `Idempotency-Key`) | declare / read policy versions (append-only) |
 | `get_return`, `list_returns_by_order`, `get_disposition_policy` | query | any MCP host | MCP, Streamable HTTP `:8090`, read-only | same read use cases as REST ([MCP tools](/docs/mcp/tools)) |
 | `com.warehouse.wms.product-master.product.ProductClassified` | event | product-master | Kafka `warehouse.product-master.events` | version-guarded `product_classes` copy |
@@ -157,9 +157,9 @@ window, unexpected return, staged line, local copy.
 | Catalogue fitness: every AsyncAPI type has an ADR 0004 line | `internal/architecture/catalogue_fitness_test.go` |
 | Hexagonal fitness: no memory adapters in `cmd/**`, no auth, no flat envelope, relay attempt cap | `internal/architecture/*` |
 
-The service exports **no runtime metrics today** (`GET /metrics` is declared in the spec but not
-served — see [Observability](/docs/operations/observability)); the verification above is build-time
-gates, not runtime signals.
+The service exports **no runtime metrics today** (the spec declares no `/metrics` route — see
+[Observability](/docs/operations/observability)); the verification above is build-time gates, not
+runtime signals.
 
 ## Open questions
 
@@ -168,5 +168,5 @@ gates, not runtime signals.
 - Restock loop closure — waits on inventory-storage promoting `ItemStowed` to its integration
   topic; until then a staged line's stow is invisible here (roadmap).
 - Analytics mirror + read side — its own later decision (ADR 0004 records it as planned).
-- `GET /metrics`: declared in `apis/openapi.yaml`, no handler wired yet — either implement the
-  exposition or drop it from the spec; do not let the contract drift.
+- Runtime metrics: none exported; `GET /metrics` was dropped from `apis/openapi.yaml` (ADR 0009) so
+  the contract matches the binary. Add the route back to the spec only together with the handler.

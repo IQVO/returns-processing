@@ -8,7 +8,7 @@ import type {
   OpenReturnReceiptBody,
   OverrideDispositionBody,
   Return,
-  ReturnList,
+  ReturnPage,
   Receipt,
 } from "./types";
 
@@ -89,7 +89,7 @@ interface RequestOptions {
 }
 
 /**
- * Every POST (authorize, receive, inspect, override -- all of which change
+ * Every POST (authorize, receive, inspections, overrides -- all of which change
  * state and REQUIRE the key in every deployed mode) carries its own
  * `Idempotency-Key`, a UUID minted for that request, so a retry or a reload
  * of the same submit can never double-apply. GETs send no custom header, so
@@ -123,11 +123,19 @@ async function request<T>(method: "GET" | "POST", path: string, opts: RequestOpt
 
 const seg = encodeURIComponent;
 
-/** GET /returns?orderRef= (the RMAs of one order, newest first; `[]` for an
- *  unknown order, never 404). */
+/** GET /returns?orderRef= (the RMAs of one order, by line then id; `[]` for an
+ *  unknown order, never 404). The list is keyset-paged ({items,nextCursor}):
+ *  every page is followed until `nextCursor` is absent, so the caller always
+ *  gets the whole list. */
 export async function listReturns(orderRef: string): Promise<Return[]> {
-  const res = await request<ReturnList>("GET", withQuery("/returns", { orderRef }));
-  return res.items ?? [];
+  const all: Return[] = [];
+  let cursor: string | undefined;
+  do {
+    const res = await request<ReturnPage>("GET", withQuery("/returns", { orderRef, cursor }));
+    all.push(...(res.items ?? []));
+    cursor = res.nextCursor || undefined;
+  } while (cursor !== undefined);
+  return all;
 }
 
 /** GET /returns/{rmaId} (404 rma-not-found). */
@@ -153,7 +161,7 @@ export function openReturnReceipt(rmaId: string, body: OpenReturnReceiptBody): P
 }
 
 /**
- * POST /receipts/{receiptId}/lines/{lineNo}/inspect: grade one line; the
+ * POST /receipts/{receiptId}/lines/{lineNo}/inspections: grade one line; the
  * policy disposition is decided in the same transaction and returned (200).
  * 409 line-already-inspected / inspected-exceeds-received.
  */
@@ -162,16 +170,16 @@ export function inspectReturnLine(
   lineNo: number,
   body: InspectReturnLineBody,
 ): Promise<InspectionResult> {
-  return request<InspectionResult>("POST", `/receipts/${seg(receiptId)}/lines/${lineNo}/inspect`, { body });
+  return request<InspectionResult>("POST", `/receipts/${seg(receiptId)}/lines/${lineNo}/inspections`, { body });
 }
 
 /**
- * POST /dispositions/{dispositionId}/override: supersede a disposition with
+ * POST /dispositions/{dispositionId}/overrides: supersede a disposition with
  * the operator's outcome and a mandatory reason (200). The original decision
  * is never mutated.
  */
 export function overrideDisposition(dispositionId: string, body: OverrideDispositionBody): Promise<Disposition> {
-  return request<Disposition>("POST", `/dispositions/${seg(dispositionId)}/override`, { body });
+  return request<Disposition>("POST", `/dispositions/${seg(dispositionId)}/overrides`, { body });
 }
 
 /** GET /disposition-policies/current (404 policy-not-found when none was ever

@@ -96,6 +96,40 @@ const sidebar: SidebarsConfig = {
     },
     {
       type: "category",
+      label: "Reports",
+      link: {
+        type: "doc",
+        id: "api-reference/rest/reports",
+      },
+      items: [
+        {
+          type: "doc",
+          id: "api-reference/rest/get-disposition-mix-report",
+          label: "Disposition outcome counts by policy version",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/get-value-recovery-report",
+          label: "Restocked lines and units per site per day",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/get-return-cycle-time-report",
+          label: "Receipt-to-staged latency percentiles per day",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/get-reports-freshness",
+          label: "How far the analytical projection is behind",
+          className: "api-method get",
+        },
+      ],
+    },
+    {
+      type: "category",
       label: "Health",
       link: {
         type: "doc",
@@ -112,12 +146,6 @@ const sidebar: SidebarsConfig = {
           type: "doc",
           id: "api-reference/rest/readyz",
           label: "Readiness probe",
-          className: "api-method get",
-        },
-        {
-          type: "doc",
-          id: "api-reference/rest/metrics",
-          label: "Prometheus metrics",
           className: "api-method get",
         },
       ],

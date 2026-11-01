@@ -59,8 +59,8 @@ func NewRouter(s *Server) http.Handler {
 		}
 		r.Post("/returns", s.handleAuthorizeReturn)
 		r.Post("/returns/{rmaId}/receipts", s.handleOpenReturnReceipt)
-		r.Post("/receipts/{receiptId}/lines/{lineNo}/inspect", s.handleInspectReturnLine)
-		r.Post("/dispositions/{dispositionId}/override", s.handleOverrideDisposition)
+		r.Post("/receipts/{receiptId}/lines/{lineNo}/inspections", s.handleInspectReturnLine)
+		r.Post("/dispositions/{dispositionId}/overrides", s.handleOverrideDisposition)
 		r.Put("/disposition-policies/{version}", s.handleDeclarePolicy)
 	})
 	return r

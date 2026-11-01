@@ -100,14 +100,14 @@ curl -i -X POST localhost:8080/returns/rma-.../receipts \
 
 # Grade the line: the disposition is decided in the same transaction
 # (quantity defaults to the line's full received quantity)
-curl -i -X POST localhost:8080/receipts/rcpt-.../lines/1/inspect \
+curl -i -X POST localhost:8080/receipts/rcpt-.../lines/1/inspections \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: insp-1' -d '{
     "grade": "A", "reasonCodes": ["OPENED"]
   }'
 # 200 with the decision: outcome RESTOCK for grade A -> ReturnLineStaged is published
 
 # Override it (reason mandatory; the original stays, superseded)
-curl -i -X POST localhost:8080/dispositions/disp-.../override \
+curl -i -X POST localhost:8080/dispositions/disp-.../overrides \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: ovr-1' -d '{
     "outcome": "REFURBISH", "reason": "customer story checked, cosmetic only"
   }'
@@ -115,7 +115,7 @@ curl -i -X POST localhost:8080/dispositions/disp-.../override \
 ```
 
 Every write takes an `Idempotency-Key` header; replaying the same key and body returns the stored
-answer, the same key with a different body is `422 idempotency-key-reused`
+answer, the same key with a different body is `409 idempotency-key-reused`
 ([API reference](/docs/api-reference)).
 
 ## Watch the events

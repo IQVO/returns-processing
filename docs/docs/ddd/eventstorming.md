@@ -37,14 +37,14 @@ flowchart TB
         C2["POST /returns/{rmaId}/receipts"]
         E2["ReturnReceiptOpened"]
         E3["UnexpectedReturnReceived<br/>(one per UNEXPECTED line)"]
-        C3["POST /receipts/{id}/lines/{n}/inspect"]
+        C3["POST /receipts/{id}/lines/{n}/inspections"]
         E4["ReturnLineInspected"]
     end
 
     subgraph DISPLANE["Disposition lane"]
         E5["DispositionDecided"]
         E6["ReturnLineStaged<br/>(RESTOCK only, once)"]
-        C4["POST /dispositions/{id}/override"]
+        C4["POST /dispositions/{id}/overrides"]
     end
 
     subgraph POLLANE["DispositionPolicy lane"]
@@ -78,7 +78,7 @@ flowchart TB
 | 1 | `ReturnAuthorized` | `POST /returns` on a manifested line inside the window and cap: the RMA is decided in one transaction. |
 | — | *(no event)* | `PUT /disposition-policies/{version}` declares a policy version. The policy is data, read by `Decide`, never evented (ADR 0002). |
 | 2 | `ReturnReceiptOpened` + `UnexpectedReturnReceived` | `POST /returns/{rmaId}/receipts`: every line is MATCHED or explicitly UNEXPECTED — one `UnexpectedReturnReceived` per unexpected line, which exception-management opens a case on. |
-| 3 | `ReturnLineInspected` | `POST /receipts/{id}/lines/{n}/inspect`: the grade (A/B/C/SCRAP) and reason codes, exactly once per line. |
+| 3 | `ReturnLineInspected` | `POST /receipts/{id}/lines/{n}/inspections`: the grade (A/B/C/SCRAP) and reason codes, exactly once per line. |
 | 4 | `DispositionDecided` | The same unit of work as the inspection: the pure `Decide` over (grade × classification × current policy), with the guardrails demoting a RESTOCK to the veto outcome. Or an operator override — a NEW Disposition carrying `supersedes` and a mandatory reason. |
 | 5 | `ReturnLineStaged` | Raised with a RESTOCK decision (policy or override), exactly once per disposition: the handover to inventory-storage. No other outcome touches a sibling. |
 
