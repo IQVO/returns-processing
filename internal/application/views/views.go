@@ -111,3 +111,12 @@ type IdempotencyRecord struct {
 	Body        []byte
 	CreatedAt   time.Time
 }
+
+// ReturnKey is the keyset position of ports.ReturnAuthorizationRepo.ListByOrder: the
+// (line number, id) of the last row of the previous page. Ordering by the pair
+// keeps RMAs that share a line (a closed one and its successor) from being
+// skipped or repeated.
+type ReturnKey struct {
+	LineNo int32
+	ID     string
+}

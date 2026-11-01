@@ -157,6 +157,7 @@ func ReturnAuthorizationRepo(t *testing.T, newRepo func(t *testing.T) ports.Retu
 		"a terminal rma keeps its decision across saves": rmaRejectedRoundTrip,
 		"the open lookup finds the open rma only":        rmaOpenLookup,
 		"list by order is by line then id":               rmaListByOrder,
+		"list by order walks keyset pages":               rmaListByOrderPages,
 		"the version guard refuses stale and re-saves":   rmaVersionGuard,
 		"a second open rma per line is refused":          rmaOneOpen,
 		"a terminal rma frees the order line":            rmaTerminalFreesLine,
@@ -219,12 +220,12 @@ func rmaListByOrder(t *testing.T, r ports.ReturnAuthorizationRepo) {
 	must(t, r.Save(bg, Authorized(t, "rma-b", "ord-1", 5, 1)))
 	must(t, r.Save(bg, Authorized(t, "rma-a", "ord-1", 2, 1)))
 	must(t, r.Save(bg, Authorized(t, "rma-c", "ord-2", 1, 1)))
-	list, err := r.ListByOrder(bg, "ord-1")
+	list, err := r.ListByOrder(bg, "ord-1", nil, 10)
 	must(t, err)
 	if len(list) != 2 || list[0].ID() != "rma-a" || list[1].ID() != "rma-b" {
 		t.Fatalf("list = %v,%v", list[0].ID(), list[1].ID())
 	}
-	empty, err := r.ListByOrder(bg, "ord-9")
+	empty, err := r.ListByOrder(bg, "ord-9", nil, 10)
 	must(t, err)
 	if len(empty) != 0 {
 		t.Fatalf("empty order listed %d rows", len(empty))

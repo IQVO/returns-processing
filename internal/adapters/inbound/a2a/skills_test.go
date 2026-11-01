@@ -448,7 +448,7 @@ var errBoom = errors.New("pq: password authentication failed for user returns@10
 func (failingRMAs) FindByID(context.Context, string) (*returnauthorization.RMA, error) {
 	return nil, errBoom
 }
-func (failingRMAs) ListByOrder(context.Context, string) ([]*returnauthorization.RMA, error) {
+func (failingRMAs) ListByOrder(context.Context, string, *views.ReturnKey, int) ([]*returnauthorization.RMA, error) {
 	return nil, errBoom
 }
 

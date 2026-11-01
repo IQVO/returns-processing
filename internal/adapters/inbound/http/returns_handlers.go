@@ -3,9 +3,12 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
+	"github.com/claudioed/returns-processing/internal/adapters/inbound/http/page"
 	"github.com/claudioed/returns-processing/internal/application/ports"
 	"github.com/claudioed/returns-processing/internal/application/usecases"
+	"github.com/claudioed/returns-processing/internal/application/views"
 )
 
 // errInvalidParam marks a path or query parameter outside its OpenAPI shape;
@@ -77,24 +80,55 @@ func (s *Server) handleGetReturn(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, returnDTOFrom(v))
 }
 
-// handleListReturnsByOrder: GET /returns?orderRef= -> ListReturnsByOrder
-// (200 with items, [] for an unknown order, never 404).
+// handleListReturnsByOrder: GET /returns?orderRef=&limit=&cursor= ->
+// ListReturnsByOrder.Page (200 {items,nextCursor}, no items for an unknown
+// order, never 404; 400 invalid-limit / invalid-cursor). Keyset order is
+// (lineNo, rmaId).
 func (s *Server) handleListReturnsByOrder(w http.ResponseWriter, r *http.Request) {
 	orderRef, err := orderRefParam(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	list, err := s.ListByOrder.Execute(r.Context(), orderRef)
+	limit, err := page.Limit(r)
+	if err != nil {
+		writeProblem(w, r, invalidLimit, invalidLimit.detail)
+		return
+	}
+	after, ok := returnCursor(w, r)
+	if !ok {
+		return
+	}
+	list, err := s.ListByOrder.Page(r.Context(), orderRef, after, page.FetchSize(limit))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	items := make([]returnDTO, 0, len(list)) // never nil: the wire answer is []
+	items := make([]returnDTO, 0, len(list))
 	for _, v := range list {
 		items = append(items, returnDTOFrom(v))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, page.Of(items, limit, func(d returnDTO) page.Position {
+		return page.Position{Sort: strconv.Itoa(int(d.LineNo)), ID: d.RMAID}
+	}))
+}
+
+// returnCursor decodes the cursor query parameter into the repository's keyset
+// position (nil on the first page). An undecodable cursor is answered 400
+// invalid-cursor and reported as not ok.
+func returnCursor(w http.ResponseWriter, r *http.Request) (*views.ReturnKey, bool) {
+	pos, err := page.After(r)
+	if err == nil && pos == nil {
+		return nil, true
+	}
+	if err == nil {
+		var lineNo int64
+		if lineNo, err = strconv.ParseInt(pos.Sort, 10, 32); err == nil {
+			return &views.ReturnKey{LineNo: int32(lineNo), ID: pos.ID}, true
+		}
+	}
+	writeProblem(w, r, invalidCursor, invalidCursor.detail)
+	return nil, false
 }
 
 // writeIfNotFound answers err with the given typed not-found problem on a

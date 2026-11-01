@@ -74,6 +74,8 @@ var (
 	rmaNotReceivable = problem{http.StatusConflict, "rma-not-receivable", "The RMA cannot receive goods", "only an AUTHORIZED RMA can be received"}
 	lineInspected    = problem{http.StatusConflict, "line-already-inspected", "The receipt line is already inspected", "a return line is inspected exactly once"}
 	inspectedExceeds = problem{http.StatusConflict, "inspected-exceeds-received", "The inspected quantity exceeds the received quantity", "inspected quantity must be at most the received quantity of the line"}
+	invalidLimit     = problem{http.StatusBadRequest, "invalid-limit", "limit is invalid", "limit must be an integer between 1 and 500"}
+	invalidCursor    = problem{http.StatusBadRequest, "invalid-cursor", "cursor is invalid", "cursor is not a cursor issued by this API"}
 	concurrentMod    = problem{http.StatusConflict, "concurrent-modification", "The resource was modified by another request; re-fetch the latest version and retry", "concurrent modification"}
 )
 

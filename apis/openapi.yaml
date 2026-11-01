@@ -124,8 +124,8 @@ paths:
       operationId: listReturnsByOrder
       summary: List the RMAs of an order
       description: |
-        Lists the RMAs whose orderRef matches `orderRef`, newest first, one
-        keyset page at a time (`limit` 1-500, default 100; `cursor` is the
+        Lists the RMAs whose orderRef matches `orderRef`, by line number then
+        RMA id, one keyset page at a time (`limit` 1-500, default 100; `cursor` is the
         opaque `nextCursor` of the previous page, absent on the last page;
         repeat `orderRef` on every page request). An unknown order answers
         `200` with `{"items":[]}`, never `404`. A malformed `limit` is 400
