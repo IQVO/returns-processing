@@ -160,7 +160,7 @@ func TestOpenReturnReceiptRoute(t *testing.T) {
 	}
 }
 
-// POST /receipts/{receiptId}/lines/{lineNo}/inspect: the disposition is
+// POST /receipts/{receiptId}/lines/{lineNo}/inspections: the disposition is
 // decided in the same unit and the InspectionResult carries it.
 func TestInspectReturnLineRoute(t *testing.T) {
 	f := newFixture(t)
@@ -209,7 +209,7 @@ func TestInspectReturnLineRoute(t *testing.T) {
 	wantProblem(t, status, raw2, "inspected-exceeds-received", "")
 }
 
-// POST /dispositions/{dispositionId}/override: a new disposition carrying
+// POST /dispositions/{dispositionId}/overrides: a new disposition carrying
 // supersedes and the reason.
 func TestOverrideDispositionRoute(t *testing.T) {
 	f := newFixture(t)

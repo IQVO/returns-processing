@@ -45,8 +45,8 @@ payload, analytics dataschema), consumed only by this service's own projector
 | `returnauthorization.ReturnAuthorizationRejected` | `POST /returns` (a decided rejection) | `rma_id`, `order_id`, `line_no`, `sku`, `quantity`, `rejection_code`, `rejected_at` |
 | `returnreceipt.ReturnReceiptOpened` | `POST /returns/{rmaId}/receipts` | `receipt_id`, `rma_id` (nullable), `site_id`, `opened_at`, `lines:[{line_no, sku, quantity, rma_id (nullable)}]` |
 | `returnreceipt.UnexpectedReturnReceived` | a received line with no RMA | `receipt_id`, `line_no`, `sku`, `quantity`, `site_id`, `received_at` |
-| `returnreceipt.ReturnLineInspected` | `POST /receipts/{receiptId}/lines/{lineNo}/inspect` | `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `reason_codes:[]`, `inspected_at` |
-| `disposition.DispositionDecided` | inspection (policy) or `POST /dispositions/{id}/override` | `disposition_id`, `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `outcome`, `policy_version`, `supersedes` (nullable), `reason` (nullable), `decided_at` |
+| `returnreceipt.ReturnLineInspected` | `POST /receipts/{receiptId}/lines/{lineNo}/inspections` | `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `reason_codes:[]`, `inspected_at` |
+| `disposition.DispositionDecided` | inspection (policy) or `POST /dispositions/{id}/overrides` | `disposition_id`, `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `outcome`, `policy_version`, `supersedes` (nullable), `reason` (nullable), `decided_at` |
 | `disposition.ReturnLineStaged` | exactly once per RESTOCK disposition | `receipt_id`, `line_no`, `sku`, `quantity`, `condition`, `received_at`, `rma_id`, `disposition_id`, `site_id` |
 
 Downstream consumers (verified on their `origin/develop`, 2026-10-21): inventory-storage consumes
