@@ -26,6 +26,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Ecosystem',
+      items: ['ecosystem/integration'],
+    },
+    {
+      type: 'category',
       label: 'Operations',
       link: {type: 'doc', id: 'operations/runbook'},
       items: [
