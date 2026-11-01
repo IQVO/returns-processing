@@ -25,7 +25,7 @@ returns-processing adopts the guideline as it is written:
   (`TestRetiredRoutesAreGone`) pins that they answer 404/405.
 - **Idempotent writes.** Every `POST` (and the policy `PUT`) sits behind the Idempotency-Key
   middleware (route-scoped; the key is global, fingerprint = method + path + SHA-256 of the body).
-  A replay carries `Idempotency-Replayed: true` (the retired `Idempotent-Replayed` spelling appears
+  A replay carries `Idempotency-Replayed: true` (the retired one-word-shorter spelling appears
   nowhere); the same key with another method, path or body is `409 idempotency-key-reused`; a missing
   key is `400 idempotency-key-required`, a key that is not 1-128 printable ASCII characters is
   `400 idempotency-key-invalid`. No POST was unkeyed before this change.
