@@ -45,6 +45,11 @@ tags:
     description: The policy outcome per inspected line, and operator overrides.
   - name: Disposition policies
     description: The versioned grade x classification policy table.
+  - name: Reports
+    description: |
+      Read-only analytics reports over the analytical database. They are served
+      by the separate `returns-reports` binary (default `:8092`, ADR 0007), not
+      by the transactional API process.
   - name: Health
     description: Liveness, readiness and metrics probes.
 
@@ -87,6 +92,8 @@ paths:
         "201":
           description: The RMA is authorized.
           headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
             Location:
               description: Path of the new RMA.
               schema:
@@ -117,8 +124,12 @@ paths:
       operationId: listReturnsByOrder
       summary: List the RMAs of an order
       description: |
-        Lists the RMAs whose orderRef matches `orderRef`, newest first. An
-        unknown order answers `200` with `[]`, never `404`.
+        Lists the RMAs whose orderRef matches `orderRef`, newest first, one
+        keyset page at a time (`limit` 1-500, default 100; `cursor` is the
+        opaque `nextCursor` of the previous page, absent on the last page;
+        repeat `orderRef` on every page request). An unknown order answers
+        `200` with `{"items":[]}`, never `404`. A malformed `limit` is 400
+        `invalid-limit`, an undecodable `cursor` is 400 `invalid-cursor`.
       tags: [Returns]
       parameters:
         - name: orderRef
@@ -131,13 +142,15 @@ paths:
             maxLength: 64
             pattern: '\S'
           example: ord-7c9e2f1a
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       responses:
         "200":
-          description: The RMAs of the order (empty for an unknown order).
+          description: One page of the RMAs of the order (empty items for an unknown order).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReturnList"
+                $ref: "#/components/schemas/ReturnPage"
               example:
                 items:
                   - rmaId: rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80
@@ -210,6 +223,8 @@ paths:
         "201":
           description: The receipt is opened.
           headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
             Location:
               description: Path of the new receipt.
               schema:
@@ -227,7 +242,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /receipts/{receiptId}/lines/{lineNo}/inspect:
+  /receipts/{receiptId}/lines/{lineNo}/inspections:
     parameters:
       - $ref: "#/components/parameters/ReceiptId"
       - $ref: "#/components/parameters/LineNo"
@@ -257,6 +272,9 @@ paths:
       responses:
         "200":
           description: The line is inspected; the disposition was decided in the same transaction.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
           content:
             application/json:
               schema:
@@ -270,7 +288,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /dispositions/{dispositionId}/override:
+  /dispositions/{dispositionId}/overrides:
     parameters:
       - $ref: "#/components/parameters/DispositionId"
     post:
@@ -298,6 +316,9 @@ paths:
       responses:
         "200":
           description: The superseding Disposition.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
           content:
             application/json:
               schema:
@@ -348,6 +369,9 @@ paths:
       responses:
         "201":
           description: The policy version is declared.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
           content:
             application/json:
               schema:
@@ -376,6 +400,120 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /reports/disposition-mix:
+    get:
+      operationId: getDispositionMixReport
+      summary: Disposition outcome counts by policy version
+      description: |
+        Whole-window aggregate of how many lines and units each outcome got per
+        policy version, over `from`/`to` (a decision counts in the day its
+        `DispositionDecided` event time falls in). Omitted bounds default to
+        the 30 days ending now; the window is at most 366 days. A bounded
+        report, not a collection: it does not page.
+      tags: [Reports]
+      x-pagination-exempt: report
+      servers:
+        - url: http://localhost:8092
+          description: The returns-reports binary
+      parameters:
+        - $ref: "#/components/parameters/ReportFrom"
+        - $ref: "#/components/parameters/ReportTo"
+        - $ref: "#/components/parameters/ReportSiteId"
+      responses:
+        "200":
+          description: The disposition mix.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispositionMixReport"
+        "400":
+          $ref: "#/components/responses/ReportBadRequest"
+        "500":
+          $ref: "#/components/responses/ReportError"
+
+  /reports/value-recovery:
+    get:
+      operationId: getValueRecoveryReport
+      summary: Restocked lines and units per site per day
+      description: |
+        The value recovered by RESTOCK dispositions: lines and units staged
+        per site per UTC day over `from`/`to`. Omitted bounds default to the 30
+        days ending now; the window is at most 366 days. A bounded report: it
+        does not page.
+      tags: [Reports]
+      x-pagination-exempt: report
+      servers:
+        - url: http://localhost:8092
+          description: The returns-reports binary
+      parameters:
+        - $ref: "#/components/parameters/ReportFrom"
+        - $ref: "#/components/parameters/ReportTo"
+        - $ref: "#/components/parameters/ReportSiteId"
+        - $ref: "#/components/parameters/ReportGranularity"
+      responses:
+        "200":
+          description: The value-recovery report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValueRecoveryReport"
+        "400":
+          $ref: "#/components/responses/ReportBadRequest"
+        "500":
+          $ref: "#/components/responses/ReportError"
+
+  /reports/return-cycle-time:
+    get:
+      operationId: getReturnCycleTimeReport
+      summary: Receipt-to-staged latency percentiles per day
+      description: |
+        The p50/p95 latency from receipt to the staged milestone per UTC day
+        over `from`/`to`. Omitted bounds default to the 30 days ending now; the
+        window is at most 366 days. A bounded report: it does not page.
+      tags: [Reports]
+      x-pagination-exempt: report
+      servers:
+        - url: http://localhost:8092
+          description: The returns-reports binary
+      parameters:
+        - $ref: "#/components/parameters/ReportFrom"
+        - $ref: "#/components/parameters/ReportTo"
+        - $ref: "#/components/parameters/ReportSiteId"
+        - $ref: "#/components/parameters/ReportGranularity"
+      responses:
+        "200":
+          description: The return-cycle-time report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnCycleTimeReport"
+        "400":
+          $ref: "#/components/responses/ReportBadRequest"
+        "500":
+          $ref: "#/components/responses/ReportError"
+
+  /reports/freshness:
+    get:
+      operationId: getReportsFreshness
+      summary: How far the analytical projection is behind
+      description: |
+        `as_of` is the time of the newest applied event and `lag_seconds` is
+        now minus `as_of`; both are null until the first event is applied.
+      tags: [Reports]
+      x-pagination-exempt: view
+      servers:
+        - url: http://localhost:8092
+          description: The returns-reports binary
+      responses:
+        "200":
+          description: The projection freshness.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Freshness"
+        "500":
+          $ref: "#/components/responses/ReportError"
 
   /healthz:
     get:
@@ -495,16 +633,74 @@ components:
       in: header
       required: true
       description: |
-        Caller-generated unique key (a UUID per logical submit) that makes a
-        retried request safe. The service always runs on Postgres, so it is
-        required on every deployment and answered with 400
-        `idempotency-key-required` when absent; a replay with the same key and
-        the same body returns the original response, while the same key with a
-        different body is 409 `idempotency-key-reused`.
+        Caller-generated unique key (a UUID per logical submit, 1-128 printable
+        ASCII characters) that makes a retried request safe. The service always
+        runs on Postgres, so it is required on every deployment and answered
+        with 400 `idempotency-key-required` when absent (`idempotency-key-invalid`
+        when malformed). A replay with the same key, method, path and body
+        returns the original response with `Idempotency-Replayed: true`; the
+        same key with a different method, path or body is 409
+        `idempotency-key-reused`.
       schema:
         type: string
         minLength: 1
         maxLength: 128
+    ReportFrom:
+      name: from
+      in: query
+      required: false
+      description: Inclusive start of the window, RFC 3339 (default `to` minus 30 days).
+      schema:
+        type: string
+        format: date-time
+    ReportTo:
+      name: to
+      in: query
+      required: false
+      description: Exclusive end of the window, RFC 3339 (default now). `to` minus `from` is at most 366 days.
+      schema:
+        type: string
+        format: date-time
+    ReportSiteId:
+      name: siteId
+      in: query
+      required: false
+      description: Restrict the report to one site.
+      schema:
+        type: string
+    ReportGranularity:
+      name: granularity
+      in: query
+      required: false
+      description: Bucket size; `day` is the only value.
+      schema:
+        type: string
+        enum: [day]
+        default: day
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size, 1-500 (default 100). Anything else is 400 `invalid-limit`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: The opaque `nextCursor` of the previous page. An undecodable cursor is 400 `invalid-cursor`.
+      schema:
+        type: string
+
+  headers:
+    IdempotencyReplayed:
+      description: Present, with the value `true`, only when the answer is a replay of the stored answer of an earlier request with the same Idempotency-Key.
+      schema:
+        type: string
+        enum: ["true"]
 
   responses:
     BadRequest:
@@ -545,7 +741,7 @@ components:
                 title: Grade is invalid
                 status: 400
                 detail: grade must be one of A, B, C, SCRAP
-                instance: /receipts/rcpt-1/lines/1/inspect
+                instance: /receipts/rcpt-1/lines/1/inspections
             overrideReasonRequired:
               summary: Blank override reason
               value:
@@ -553,7 +749,7 @@ components:
                 title: An override must say why
                 status: 400
                 detail: reason must not be blank
-                instance: /dispositions/disp-1/override
+                instance: /dispositions/disp-1/overrides
             invalidPolicy:
               summary: Policy table invalid
               value:
@@ -569,6 +765,30 @@ components:
                 title: Idempotency-Key header is required
                 status: 400
                 detail: send an Idempotency-Key header with a unique value per logical request
+                instance: /returns
+            idempotencyKeyInvalid:
+              summary: Malformed Idempotency-Key
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/idempotency-key-invalid
+                title: Idempotency-Key header is invalid
+                status: 400
+                detail: the Idempotency-Key header must be 1 to 128 printable ASCII characters
+                instance: /returns
+            invalidLimit:
+              summary: limit outside 1-500
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/invalid-limit
+                title: limit is invalid
+                status: 400
+                detail: limit must be an integer between 1 and 500
+                instance: /returns
+            invalidCursor:
+              summary: cursor does not decode
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/invalid-cursor
+                title: cursor is invalid
+                status: 400
+                detail: cursor is not a cursor issued by this API
                 instance: /returns
     NotFound:
       description: No RMA, receipt or disposition has this identity.
@@ -592,7 +812,7 @@ components:
                 title: Return receipt not found
                 status: 404
                 detail: return receipt not found
-                instance: /receipts/rcpt-unknown/lines/1/inspect
+                instance: /receipts/rcpt-unknown/lines/1/inspections
             dispositionNotFound:
               summary: No disposition has this id
               value:
@@ -600,7 +820,7 @@ components:
                 title: Disposition not found
                 status: 404
                 detail: disposition not found
-                instance: /dispositions/disp-unknown/override
+                instance: /dispositions/disp-unknown/overrides
             policyNotFound:
               summary: No policy was ever declared
               value:
@@ -663,7 +883,7 @@ components:
                 title: The receipt line is already inspected
                 status: 409
                 detail: a return line is inspected exactly once
-                instance: /receipts/rcpt-1/lines/1/inspect
+                instance: /receipts/rcpt-1/lines/1/inspections
             inspectedExceedsReceived:
               summary: The inspected quantity passes the received quantity
               value:
@@ -671,7 +891,7 @@ components:
                 title: The inspected quantity exceeds the received quantity
                 status: 409
                 detail: inspected quantity must be at most the received quantity of the line
-                instance: /receipts/rcpt-1/lines/1/inspect
+                instance: /receipts/rcpt-1/lines/1/inspections
             concurrentModification:
               summary: Stale version or concurrent write
               value:
@@ -681,13 +901,40 @@ components:
                 detail: concurrent modification
                 instance: /disposition-policies/4
             idempotencyKeyReused:
-              summary: The Idempotency-Key was used with a different body
+              summary: The Idempotency-Key was used with a different request
               value:
                 type: https://errors.returns-processing.warehouse-systems.dev/idempotency-key-reused
                 title: Idempotency-Key was already used with a different request
                 status: 409
-                detail: the Idempotency-Key was used with a different request body
+                detail: the Idempotency-Key was used with a different request (method, path or body)
                 instance: /returns
+    ReportBadRequest:
+      description: from/to is not a valid RFC 3339 range of at most 366 days, or granularity is not `day`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            invalidReportRange:
+              summary: Invalid range
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/invalid-report-range
+                title: from and to must form a valid RFC 3339 range of at most 366 days
+                status: 400
+                detail: from must be strictly before to
+                instance: /reports/disposition-mix
+    ReportError:
+      description: The analytical database query failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://errors.returns-processing.warehouse-systems.dev/report-store-error
+            title: The report could not be served
+            status: 500
+            detail: the analytical database query failed
+            instance: /reports/disposition-mix
     InternalError:
       description: Unexpected server error.
       content:
@@ -784,13 +1031,16 @@ components:
         receivedAt: { type: string, format: date-time, description: When the first receipt moved the RMA to RECEIVED. }
         closedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 1, description: "Starts at 1, +1 per accepted transition; guards every write (409 on a lost update)." }
-    ReturnList:
+    ReturnPage:
       type: object
       required: [items]
       properties:
         items:
           type: array
           items: { $ref: "#/components/schemas/Return" }
+        nextCursor:
+          type: string
+          description: Opaque cursor of the next page; absent on the last page.
 
     OpenReturnReceiptRequest:
       type: object
@@ -957,6 +1207,80 @@ components:
           type: array
           items: { $ref: "#/components/schemas/PolicyRule" }
         declaredAt: { type: string, format: date-time }
+
+    DispositionMixReport:
+      type: object
+      required: [from, to, rows]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        site_id: { type: string, description: Present when the report was filtered to one site. }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [policy_version, outcome, lines, units]
+            properties:
+              policy_version: { type: integer, format: int64, minimum: 1 }
+              outcome: { $ref: "#/components/schemas/Outcome" }
+              lines: { type: integer }
+              units: { type: integer, format: int64 }
+
+    ValueRecoveryReport:
+      type: object
+      required: [from, to, granularity, days]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        site_id: { type: string }
+        granularity: { type: string, enum: [day] }
+        days:
+          type: array
+          items:
+            type: object
+            required: [day, sites]
+            properties:
+              day: { type: string, format: date-time, description: Midnight UTC of the day. }
+              sites:
+                type: array
+                items:
+                  type: object
+                  required: [site_id, restocked_lines, restocked_units]
+                  properties:
+                    site_id: { type: string }
+                    restocked_lines: { type: integer }
+                    restocked_units: { type: integer, format: int64 }
+
+    ReturnCycleTimeReport:
+      type: object
+      required: [from, to, granularity, days]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        site_id: { type: string }
+        granularity: { type: string, enum: [day] }
+        days:
+          type: array
+          items:
+            type: object
+            required: [day, staged_lines, cycle_time]
+            properties:
+              day: { type: string, format: date, description: The UTC calendar day. }
+              staged_lines: { type: integer }
+              cycle_time:
+                type: object
+                required: [count, p50_seconds, p95_seconds]
+                properties:
+                  count: { type: integer }
+                  p50_seconds: { type: number, format: double, nullable: true }
+                  p95_seconds: { type: number, format: double, nullable: true }
+
+    Freshness:
+      type: object
+      required: [as_of, lag_seconds]
+      properties:
+        as_of: { type: string, format: date-time, nullable: true, description: Time of the newest applied event; null until the first event. }
+        lag_seconds: { type: number, format: double, nullable: true, description: Now minus as_of; null until the first event. }
 
     Problem:
       type: object
