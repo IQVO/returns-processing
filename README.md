@@ -267,10 +267,9 @@ What exists today, and what deliberately does not (see the
   gate AND a Postgres ping AND a Kafka broker metadata check, cached a few
   seconds).
 - **Metrics — none.** The service exports no runtime metrics: no Prometheus
-  registry, no OTel meters. `GET /metrics` is declared in
-  `apis/openapi.yaml` but the router serves no such handler — the exposition
-  is an open item (tracked on the bounded-context canvas), so the only
-  runtime signals today are the logs and the two probes.
+  registry, no OTel meters, and `apis/openapi.yaml` declares no `/metrics`
+  route (it was dropped in the REST guideline cutover so the contract matches
+  the binary). The only runtime signals today are the logs and the two probes.
 - **Traces — no SDK wired.** Outgoing Kafka messages MAY carry W3C
   `traceparent`/`tracestate` when the writing request provided them; the
   service starts no spans of its own (the A2A adapter's `otel.Tracer` calls
@@ -286,24 +285,26 @@ below is declared at the same path in `apis/openapi.yaml`.
 | Method | Path | Purpose | Success |
 |---|---|---|---|
 | `POST` | `/returns` | AuthorizeReturn (against an allocated + manifested line) | `201` + `Location` |
-| `GET` | `/returns?orderId=` | List a return by order | `200` |
+| `GET` | `/returns?orderRef=&limit=&cursor=` | List the RMAs of an order, one keyset page at a time (`{items,nextCursor}`) | `200` |
 | `GET` | `/returns/{rmaId}` | Get one return (RMA detail) | `200` |
 | `POST` | `/returns/{rmaId}/receipts` | OpenReturnReceipt | `201` + `Location` |
-| `POST` | `/receipts/{receiptId}/lines/{lineNo}/inspect` | InspectReturnLine (grade + disposition) | `201` + `Location` |
-| `POST` | `/dispositions/{dispositionId}/override` | OverrideDisposition (superseding decision, with reason) | `201` + `Location` |
-| `PUT` | `/disposition-policies/{version}` | DeclareDispositionPolicy (versioned) | `200` |
+| `POST` | `/receipts/{receiptId}/lines/{lineNo}/inspections` | InspectReturnLine (grade + disposition) | `200` |
+| `POST` | `/dispositions/{dispositionId}/overrides` | OverrideDisposition (superseding decision, with reason) | `200` |
+| `PUT` | `/disposition-policies/{version}` | DeclareDispositionPolicy (versioned) | `201` |
 | `GET` | `/disposition-policies/current` | Get the current policy | `200` |
 | `GET` | `/healthz` / `/readyz` | Liveness / readiness (drain gate + Postgres + Kafka) | `200` |
-| `GET` | `/metrics` | **declared in the spec, not served** (see Observability) | — |
+| `GET` | `/reports/disposition-mix`, `/reports/value-recovery`, `/reports/return-cycle-time`, `/reports/freshness` | Analytics reports, served by the separate `returns-reports` binary (`:8092`); bounded by `from`/`to`, so unpaginated (`x-pagination-exempt`) | `200` |
 
 ### Idempotency
 
 Every write route — the four `POST`s and
 `PUT /disposition-policies/{version}` — requires a caller-supplied
 `Idempotency-Key` header (Postgres-backed idempotency pool, migration
-`0002_idempotency_keys`). A retry with the same key and the same body replays
-the original response verbatim; the same key with a different body is
-rejected `422`; a missing header is `400`.
+`0002_idempotency_keys`). A retry with the same key, method, path and body
+replays the original response verbatim with `Idempotency-Replayed: true`; the
+same key with a different method, path or body is rejected `409`
+(`idempotency-key-reused`); a missing header is `400`
+(`idempotency-key-required`), a malformed one `400` (`idempotency-key-invalid`).
 
 `apis/openapi.yaml` (OpenAPI 3.0.3) documents every route with full schemas
 and a shared `Problem` component; `apis/asyncapi.yaml` (AsyncAPI 2.6)

@@ -74,7 +74,7 @@ carries the arrival fact.
 
 ### 6. `InspectReturnLine` (`inspect_return_line.go`)
 
-`POST /receipts/{receiptId}/lines/{lineNo}/inspect` with `{grade, quantity,
+`POST /receipts/{receiptId}/lines/{lineNo}/inspections` with `{grade, quantity,
 reasonCodes}`: grades the line (exactly once, inspected qty in
 [1, received qty]) and decides its disposition in the same unit of work:
 the current policy, the classification from the product copy and the grade
@@ -84,7 +84,7 @@ A wrong grade is corrected by an override, never by re-inspecting.
 
 ### 7. `OverrideDisposition` (`override_disposition.go`)
 
-`POST /dispositions/{dispositionId}/override` with `{outcome, reason}`:
+`POST /dispositions/{dispositionId}/overrides` with `{outcome, reason}`:
 creates a NEW immutable Disposition carrying `supersedes` and the mandatory
 reason, keeping the original's line, grade, quantity and `policy_version`
 (the version under discussion); the original is never mutated. A RESTOCK
@@ -111,7 +111,7 @@ status, rejection code, window, decision instant. Also behind the
 
 ### 10. `ListReturnsByOrder`
 
-`GET /returns?orderRef=…` — every RMA of one order, newest first; `[]` for
+`GET /returns?orderRef=…` — the RMAs of one order by line then id, one keyset page at a time (`limit`, `cursor`, `{items,nextCursor}`); `[]` for
 an unknown order, never a 404. Also behind the `list_returns_by_order` MCP
 tool.
 

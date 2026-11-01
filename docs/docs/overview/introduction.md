@@ -49,9 +49,9 @@ never calls a sibling context over REST or MCP ([ADR 0003](/docs/adr/0003-local-
    `OPEN_RMA_EXISTS`, `QUANTITY_EXCEEDS_POLICY`).
 2. **Receive parcels** with `POST /returns/{rmaId}/receipts`; a line with no RMA is received as
    explicitly UNEXPECTED and raises `UnexpectedReturnReceived` for exception-management.
-3. **Inspect lines** with `POST /receipts/{receiptId}/lines/{lineNo}/inspect`; the grade is recorded
+3. **Inspect lines** with `POST /receipts/{receiptId}/lines/{lineNo}/inspections`; the grade is recorded
    and the disposition decided by the current policy in the same transaction.
-4. **Override a disposition** with `POST /dispositions/{id}/override` (reason mandatory); the
+4. **Override a disposition** with `POST /dispositions/{id}/overrides` (reason mandatory); the
    original stays immutable.
 5. **Declare policy versions** with `PUT /disposition-policies/{version}` (append-only).
 6. **Publish** `ReturnAuthorized`, `ReturnAuthorizationRejected`, `ReturnReceiptOpened`,

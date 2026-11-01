@@ -51,7 +51,7 @@ tags:
       by the separate `returns-reports` binary (default `:8092`, ADR 0007), not
       by the transactional API process.
   - name: Health
-    description: Liveness, readiness and metrics probes.
+    description: Liveness and readiness probes.
 
 paths:
   /returns:
@@ -559,19 +559,6 @@ paths:
                 status: 503
                 detail: "not ready: kafka"
                 instance: /readyz
-  /metrics:
-    get:
-      operationId: metrics
-      summary: Prometheus metrics
-      description: The service's Prometheus exposition (request, consumer and outbox relay metrics).
-      tags: [Health]
-      responses:
-        "200":
-          description: The metrics exposition.
-          content:
-            text/plain:
-              schema:
-                type: string
 
 components:
   parameters:

@@ -22,3 +22,4 @@ section.
 | [0006](/docs/adr/0006-console-remote-web) | the console remote (returns_mfe) — a read-and-command screen over the existing REST | Accepted (2026-10-21) |
 | [0007](/docs/adr/0007-analytics-read-side) | the analytics read side — own topic, own database, projector + reports | Accepted (2026-10-21) |
 | [0008](/docs/adr/0008-a2a-inbound-adapter) | the A2A inbound adapter — a read-only Agent2Agent agent over the same read use cases | Accepted (2026-10-30) |
+| [0009](/docs/adr/0009-adopt-the-fleet-rest-api-guideline) | adopt the fleet REST API guideline — noun routes, idempotent POSTs with a 409 on key reuse, keyset paging | Accepted (2026-11-01) |
