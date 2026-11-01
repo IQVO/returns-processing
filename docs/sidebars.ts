@@ -26,6 +26,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Ecosystem',
+      items: ['ecosystem/integration'],
+    },
+    {
+      type: 'category',
       label: 'Operations',
       link: {type: 'doc', id: 'operations/runbook'},
       items: [
@@ -51,6 +56,7 @@ const sidebars: SidebarsConfig = {
       link: {type: 'doc', id: 'ddd/ubiquitous-language'},
       items: [
         'ddd/use-cases',
+        'ddd/subdomain-classification',
         {
           type: 'category',
           label: 'DDD artifacts (ddd-crew)',
