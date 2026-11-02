@@ -142,9 +142,10 @@ in a runtime binary), `kafka_writer_topic_fitness_test.go`,
 
 ## Domain events
 
-All seven published events — `ReturnAuthorized`,
-`ReturnAuthorizationRejected`, `ReturnReceiptOpened`, `ReturnLineInspected`,
-`UnexpectedReturnReceived`, `DispositionDecided`, `ReturnLineStaged` — go
+All published events — `ReturnAuthorized`, `ReturnReceiptOpened`,
+`ReturnLineInspected`, `UnexpectedReturnReceived`, `DispositionDecided`,
+`ReturnLineStaged` (and `ReturnAuthorizationRejected`, which the catalogue
+declares but no use case raises today) — go
 through the transactional outbox (ADR 0005) to BOTH
 `warehouse.returns-processing.events` (the integration topic other contexts
 read) and `warehouse.returns-processing.analytics` (this service's own
@@ -271,9 +272,9 @@ What exists today, and what deliberately does not (see the
   registry, no OTel meters, and `apis/openapi.yaml` declares no `/metrics`
   route (it was dropped in the REST guideline cutover so the contract matches
   the binary). The only runtime signals today are the logs and the two probes.
-- **Traces — no SDK wired.** Outgoing Kafka messages MAY carry W3C
-  `traceparent`/`tracestate` when the writing request provided them; the
-  service starts no spans of its own (the A2A adapter's `otel.Tracer` calls
+- **Traces — no SDK wired.** Outgoing Kafka messages carry only the
+  CloudEvents `content-type` header (no `traceparent`/`tracestate` is
+  propagated); the service starts no spans of its own (the A2A adapter's `otel.Tracer` calls
   are no-ops without a provider).
 
 ---

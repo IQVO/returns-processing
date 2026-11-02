@@ -20,9 +20,9 @@ probes.
 
 ## Traces
 
-No tracing SDK is wired. Outgoing Kafka messages MAY carry W3C `traceparent`/`tracestate` headers
-when the writing request provided them (the CloudEvents helper passes headers through), but this
-service starts no spans of its own.
+No tracing SDK is wired. Outgoing Kafka messages carry only the CloudEvents `content-type` header
+(the outbox relay propagates no `traceparent`/`tracestate`), and this service starts no spans of its
+own.
 
 ## Logs
 

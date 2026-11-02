@@ -42,7 +42,7 @@ payload, analytics dataschema), consumed only by this service's own projector
 | Type suffix | Raised | Payload (`data`) |
 | --- | --- | --- |
 | `returnauthorization.ReturnAuthorized` | `POST /returns` (a manifested, in-window line) | `rma_id`, `order_id`, `line_no`, `sku`, `quantity`, `site_id`, `reason_code`, `window_ends_at`, `authorized_at` |
-| `returnauthorization.ReturnAuthorizationRejected` | `POST /returns` (a decided rejection) | `rma_id`, `order_id`, `line_no`, `sku`, `quantity`, `rejection_code`, `rejected_at` |
+| `returnauthorization.ReturnAuthorizationRejected` | declared, not raised today: no use case rejects (`POST /returns` answers a refusal with 409 and publishes nothing) | `rma_id`, `order_id`, `line_no`, `sku`, `quantity`, `rejection_code`, `rejected_at` |
 | `returnreceipt.ReturnReceiptOpened` | `POST /returns/{rmaId}/receipts` | `receipt_id`, `rma_id` (nullable), `site_id`, `opened_at`, `lines:[{line_no, sku, quantity, rma_id (nullable)}]` |
 | `returnreceipt.UnexpectedReturnReceived` | a received line with no RMA | `receipt_id`, `line_no`, `sku`, `quantity`, `site_id`, `received_at` |
 | `returnreceipt.ReturnLineInspected` | `POST /receipts/{receiptId}/lines/{lineNo}/inspections` | `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `reason_codes:[]`, `inspected_at` |
