@@ -37,8 +37,10 @@ export interface Return {
   version: number;
 }
 
-export interface ReturnList {
+/** One page of GET /returns: `nextCursor` is absent on the last page. */
+export interface ReturnPage {
   items: Return[];
+  nextCursor?: string;
 }
 
 /** The body of POST /returns. */
@@ -90,7 +92,7 @@ export interface Receipt {
   version: number;
 }
 
-/** The body of POST /receipts/{receiptId}/lines/{lineNo}/inspect. `quantity`
+/** The body of POST /receipts/{receiptId}/lines/{lineNo}/inspections. `quantity`
  *  omitted = the line's full received quantity. */
 export interface InspectReturnLineBody {
   grade: Grade;
@@ -127,7 +129,7 @@ export interface InspectionResult {
   disposition: Disposition;
 }
 
-/** The body of POST /dispositions/{dispositionId}/override. */
+/** The body of POST /dispositions/{dispositionId}/overrides. */
 export interface OverrideDispositionBody {
   outcome: Outcome;
   reason: string;

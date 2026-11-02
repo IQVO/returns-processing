@@ -105,7 +105,7 @@ Full design: [ADR 0005](/docs/adr/0005-transactional-outbox-and-relay).
 
 - **Declare a new policy version** — `PUT /disposition-policies/{n}`; nothing re-decides old
   dispositions (they keep their `policy_version`), new inspections use the new version immediately.
-- **Fix a wrong disposition** — `POST /dispositions/{id}/override` with a reason; never re-inspect.
+- **Fix a wrong disposition** — `POST /dispositions/{id}/overrides` with a reason; never re-inspect.
 - **Re-arm a capped outbox row** — see above.
 - **Inspect the DLQs** — `<consumed topic>.dlq` (inbound poison; headers carry the cause) and
   `warehouse.returns-processing.events.dlq` (producer-side).

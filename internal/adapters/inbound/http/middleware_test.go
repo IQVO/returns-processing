@@ -19,8 +19,8 @@ func TestIdempotencyKeyRequiredOnEveryWrite(t *testing.T) {
 	}{
 		{http.MethodPost, "/returns", `{"orderId":"ord-7c9e","lineNo":1,"sku":"SKU-1","quantity":2,"siteId":"WH1","reasonCode":"DAMAGED"}`},
 		{http.MethodPost, "/returns/rma-1/receipts", `{"siteId":"WH1","lines":[{"lineNo":1,"sku":"SKU-1","quantity":2,"kind":"UNEXPECTED"}]}`},
-		{http.MethodPost, "/receipts/rcpt-1/lines/1/inspect", `{"grade":"A","quantity":1}`},
-		{http.MethodPost, "/dispositions/disp-1/override", `{"outcome":"RTV","reason":"x"}`},
+		{http.MethodPost, "/receipts/rcpt-1/lines/1/inspections", `{"grade":"A","quantity":1}`},
+		{http.MethodPost, "/dispositions/disp-1/overrides", `{"outcome":"RTV","reason":"x"}`},
 		{http.MethodPut, "/disposition-policies/2", `{"returnWindowDays":30,"maxUnitsPerLine":10,"rules":[{"grade":"A","productClass":"*","outcome":"RESTOCK"}]}`},
 	}
 	for _, route := range routes {
@@ -49,9 +49,15 @@ func TestIdempotencyReplayAndReuse(t *testing.T) {
 	if status1 != http.StatusCreated {
 		t.Fatalf("first = %d %s", status1, raw1)
 	}
+	if got := header1.Get(IdempotencyReplayedHeader); got != "" {
+		t.Fatalf("the first execution carries %s: %q", IdempotencyReplayedHeader, got)
+	}
 	status2, raw2, header2 := f.call(http.MethodPost, "/returns", body, "k-replay")
 	if status2 != status1 || raw2 != raw1 || header2.Get("Location") != header1.Get("Location") {
 		t.Fatalf("replay differs: %d %s %q vs %d %s %q", status2, raw2, header2.Get("Location"), status1, raw1, header1.Get("Location"))
+	}
+	if got := header2.Get("Idempotency-Replayed"); got != "true" {
+		t.Fatalf("replay Idempotency-Replayed = %q, want true", got)
 	}
 	if n := f.store.Len(); n != 1 {
 		t.Fatalf("store = %d answers, want 1", n)
@@ -111,11 +117,60 @@ func TestRejectNUL(t *testing.T) {
 		`{"orderId":"ord-7c9e","lineNo":1,"sku":"SKU-1","quantity":2,"siteId":"WH1","reasonCode":"DAMAGED"}`, "k-nul", http.StatusCreated)
 }
 
-// An over-long key is 400 idempotency-key-required.
-func TestIdempotencyKeyTooLong(t *testing.T) {
+// A key longer than 128 characters, or with a character outside printable
+// ASCII, is 400 idempotency-key-invalid (a missing key is
+// idempotency-key-required).
+func TestIdempotencyKeyInvalid(t *testing.T) {
 	f := newFixture(t)
-	status, raw, _ := f.call(http.MethodPost, "/returns", "{}", strings.Repeat("x", 129))
-	wantProblem(t, status, raw, "idempotency-key-required", "1 to 128")
+	for name, key := range map[string]string{
+		"too long":  strings.Repeat("x", 129),
+		"non-ASCII": "k-é",
+	} {
+		t.Run(name, func(t *testing.T) {
+			status, raw, _ := f.call(http.MethodPost, "/returns", "{}", key)
+			wantProblem(t, status, raw, "idempotency-key-invalid", "1 to 128")
+			if status != http.StatusBadRequest {
+				t.Fatalf("status = %d", status)
+			}
+		})
+	}
+	// 128 characters is the longest valid key: it reaches the handler.
+	status, raw, _ := f.call(http.MethodPost, "/returns", "{}", strings.Repeat("x", 128))
+	if strings.Contains(raw, "idempotency-key") {
+		t.Fatalf("128-char key = %d %s, want it accepted", status, raw)
+	}
+}
+
+func TestValidKey(t *testing.T) {
+	for key, want := range map[string]bool{
+		"":                                     false,
+		"a":                                    true,
+		"550e8400-e29b-41d4-a716-446655440000": true,
+		"two words":                            true,
+		"tab\there":                            false,
+		"nul\x00":                              false,
+		"del\x7f":                              false,
+		"é":                                    false,
+		strings.Repeat("k", 128):               true,
+		strings.Repeat("k", 129):               false,
+	} {
+		if got := validKey(key); got != want {
+			t.Errorf("validKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+}
+
+// The key is global: the same key on another route (or method) is a different
+// request, so it is 409 idempotency-key-reused, not a fresh key.
+func TestIdempotencyKeyIsGlobalAcrossRoutes(t *testing.T) {
+	f := newFixture(t)
+	const body = `{"orderId":"ord-7c9e","lineNo":1,"sku":"SKU-1","quantity":2,"siteId":"WH1","reasonCode":"DAMAGED"}`
+	f.mustCall(http.MethodPost, "/returns", body, "k-global", http.StatusCreated)
+	status, raw, _ := f.call(http.MethodPost, "/returns/rma-1/receipts", body, "k-global")
+	wantProblem(t, status, raw, "idempotency-key-reused", "")
+	if status != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", status)
+	}
 }
 
 // /healthz is liveness only; /readyz reflects the drain gate and the

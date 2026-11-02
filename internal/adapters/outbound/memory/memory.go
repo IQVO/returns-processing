@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/claudioed/returns-processing/internal/application/ports"
+	"github.com/claudioed/returns-processing/internal/application/views"
 	"github.com/claudioed/returns-processing/internal/domain/disposition"
 	"github.com/claudioed/returns-processing/internal/domain/returnauthorization"
 	"github.com/claudioed/returns-processing/internal/domain/returnreceipt"
@@ -103,14 +104,16 @@ func (r *RMAs) FindOpenByOrderLine(_ context.Context, orderID string, lineNo int
 	return nil, ports.ErrNotFound
 }
 
-// ListByOrder returns every RMA of the order, by line number then id.
-func (r *RMAs) ListByOrder(_ context.Context, orderID string) ([]*returnauthorization.RMA, error) {
+// ListByOrder returns at most limit RMAs of the order, by line number then id,
+// strictly after the keyset position after (the first page when nil) — the
+// same (line_no, rma_id) keyset the Postgres adapter queries.
+func (r *RMAs) ListByOrder(_ context.Context, orderID string, after *views.ReturnKey, limit int) ([]*returnauthorization.RMA, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []*returnauthorization.RMA
 	for _, id := range r.order {
 		rma := r.byID[id]
-		if rma.Line().OrderID().String() == orderID {
+		if rma.Line().OrderID().String() == orderID && afterKey(rma, after) {
 			out = append(out, clone(rma))
 		}
 	}
@@ -120,7 +123,22 @@ func (r *RMAs) ListByOrder(_ context.Context, orderID string) ([]*returnauthoriz
 		}
 		return out[i].ID() < out[j].ID()
 	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
 	return out, nil
+}
+
+// afterKey reports whether rma sorts strictly after the keyset position (every
+// RMA does when after is nil).
+func afterKey(rma *returnauthorization.RMA, after *views.ReturnKey) bool {
+	if after == nil {
+		return true
+	}
+	if line := rma.Line().LineNo(); line != after.LineNo {
+		return line > after.LineNo
+	}
+	return rma.ID() > after.ID
 }
 
 // Receipts is the ReturnReceiptRepo double (clone round-trip, like RMAs).

@@ -23,8 +23,8 @@ function mountDetail() {
     [`GET /returns/${RMA_ID}`]: () =>
       json(rma(served++ === 0 ? {} : { status: "RECEIVED", receivedAt: "2026-10-21T10:00:00Z", version: 2 })),
     [`POST /returns/${RMA_ID}/receipts`]: json(receipt(), 201),
-    [`POST /receipts/${RECEIPT_ID}/lines/1/inspect`]: json(inspection()),
-    [`POST /dispositions/${DISPOSITION_ID}/override`]: json(RTV_DISPOSITION),
+    [`POST /receipts/${RECEIPT_ID}/lines/1/inspections`]: json(inspection()),
+    [`POST /dispositions/${DISPOSITION_ID}/overrides`]: json(RTV_DISPOSITION),
   });
   const view = render(
     <MemoryRouter initialEntries={[`/returns/${RMA_ID}`]}>
@@ -95,7 +95,7 @@ describe("ReturnDetailScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Inspect line" }));
     // The policy decision, from the inspect response's disposition.
     expect(await screen.findByText(/yes \(ReturnLineStaged raised\)/)).toBeInTheDocument();
-    const [inspect] = api.to(`POST /receipts/${RECEIPT_ID}/lines/1/inspect`);
+    const [inspect] = api.to(`POST /receipts/${RECEIPT_ID}/lines/1/inspections`);
     expect(inspect.body).toEqual({ grade: "B", reasonCodes: ["CUSTOMER_DAMAGE", "OPENED_BOX"] });
     expect(inspect.headers["Idempotency-Key"]).toMatch(UUID);
     // Override it with a reason; the override supersedes the decision.
@@ -103,7 +103,7 @@ describe("ReturnDetailScreen", () => {
     await userEvent.type(screen.getByLabelText(/^Reason \*/), "vendor accepts open-box returns this quarter");
     await userEvent.click(screen.getByRole("button", { name: "Override disposition" }));
     expect(await screen.findByText("Override recorded; it supersedes the decision above.")).toBeInTheDocument();
-    const [override] = api.to(`POST /dispositions/${DISPOSITION_ID}/override`);
+    const [override] = api.to(`POST /dispositions/${DISPOSITION_ID}/overrides`);
     expect(override.body).toEqual({ outcome: "RTV", reason: "vendor accepts open-box returns this quarter" });
     expect(override.headers["Idempotency-Key"]).toMatch(UUID);
     expect(screen.getByText("disp-override-1")).toBeInTheDocument();

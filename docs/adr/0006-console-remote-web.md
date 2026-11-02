@@ -46,9 +46,9 @@ Three surfaces, exactly what `apis/openapi.yaml` serves today:
    order = empty list) plus `POST /returns` (authorize) as its write action.
 2. **RMA detail** — `GET /returns/{rmaId}`; while AUTHORIZED, `POST
    /returns/{rmaId}/receipts` (open the receipt), then per received line
-   `POST /receipts/{receiptId}/lines/{lineNo}/inspect` (grade; the policy
+   `POST /receipts/{receiptId}/lines/{lineNo}/inspections` (grade; the policy
    disposition is decided in the same transaction) and, when the operator
-   disagrees, `POST /dispositions/{dispositionId}/override`.
+   disagrees, `POST /dispositions/{dispositionId}/overrides`.
 3. **Disposition policy** — `GET /disposition-policies/current` (read-only;
    versions are append-only and declared through the API, not the screen).
 

@@ -107,7 +107,7 @@ func TestRMAs_OpenByOrderLineAndList(t *testing.T) {
 	if _, err := repo.FindOpenByOrderLine(ctx, "ord-2", 2); !errors.Is(err, ports.ErrNotFound) {
 		t.Fatalf("other order err = %v", err)
 	}
-	list, err := repo.ListByOrder(ctx, "ord-1")
+	list, err := repo.ListByOrder(ctx, "ord-1", nil, 10)
 	if err != nil || len(list) != 2 {
 		t.Fatalf("list err=%v len=%d", err, len(list))
 	}
