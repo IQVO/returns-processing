@@ -115,7 +115,7 @@ func TestConsumeLoop_CommitsOnlyAfterHandled(t *testing.T) {
 	reader := &fakeReader{messages: []kafkago.Message{msg(0, "a"), msg(1, "b")}}
 	l, _ := loop(reader, func() error { return nil }, false)
 
-	if err := l.run(context.Background()); err != errNoMoreMessages {
+	if err := l.run(context.Background()); !errors.Is(err, errNoMoreMessages) {
 		t.Fatalf("run = %v, want the parking error", err)
 	}
 	if got := reader.committed(); len(got) != 2 || got[0] != 0 || got[1] != 1 {
@@ -134,7 +134,7 @@ func TestConsumeLoop_RetriesTheSameTransientFailureUntilItPasses(t *testing.T) {
 		return nil
 	}, true)
 
-	if err := l.run(context.Background()); err != errNoMoreMessages {
+	if err := l.run(context.Background()); !errors.Is(err, errNoMoreMessages) {
 		t.Fatalf("run = %v", err)
 	}
 	if attempts != 3 {
@@ -159,7 +159,7 @@ func TestConsumeLoop_DeadLettersAfterMaxAttemptsAndMovesOn(t *testing.T) {
 		return nil
 	}, true)
 
-	if err := l.run(context.Background()); err != errNoMoreMessages {
+	if err := l.run(context.Background()); !errors.Is(err, errNoMoreMessages) {
 		t.Fatalf("run = %v", err)
 	}
 	if calls != 4 { // 3 failed attempts on the first, 1 pass on the second
@@ -182,7 +182,7 @@ func TestConsumeLoop_DeadLettersPoisonAtOnce(t *testing.T) {
 		return fmt.Errorf("%w: blank sku", errPoison)
 	}, true)
 
-	if err := l.run(context.Background()); err != errNoMoreMessages {
+	if err := l.run(context.Background()); !errors.Is(err, errNoMoreMessages) {
 		t.Fatalf("run = %v", err)
 	}
 	if calls != 1 {

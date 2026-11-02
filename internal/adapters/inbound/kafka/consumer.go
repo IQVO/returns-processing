@@ -134,7 +134,7 @@ func (c *Consumer) HandleMessage(ctx context.Context, value []byte) error {
 func decodeData[T any](e ce.Event) (T, error) {
 	var v T
 	if err := e.DataAs(&v); err != nil {
-		return v, fmt.Errorf("%w: %v", errBadPayload, err)
+		return v, fmt.Errorf("%w: %w", errBadPayload, err)
 	}
 	return v, nil
 }

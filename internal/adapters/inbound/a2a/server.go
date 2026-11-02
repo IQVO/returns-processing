@@ -35,6 +35,10 @@ import (
 	"github.com/claudioed/returns-processing/internal/application/usecases"
 )
 
+// contentTypeJSON is the JSON MIME type the agent advertises for input
+// and output modes alongside plain text.
+const contentTypeJSON = "application/json"
+
 // Config carries the deployment-specific identity of this agent: the absolute
 // URL clients use to reach its JSON-RPC endpoint (advertised on the Agent
 // Card) and the card version. It is supplied by the composition root from
@@ -79,8 +83,8 @@ func Card(cfg Config) *a2a.AgentCard {
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(cfg.AgentURL, a2a.TransportProtocolJSONRPC),
 		},
-		DefaultInputModes:  []string{"application/json", "text/plain"},
-		DefaultOutputModes: []string{"application/json", "text/plain"},
+		DefaultInputModes:  []string{contentTypeJSON, "text/plain"},
+		DefaultOutputModes: []string{contentTypeJSON, "text/plain"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: false},
 		Skills: []a2a.AgentSkill{
 			{
@@ -88,7 +92,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				Name:        "Where does a return stand",
 				Description: "Read the state of returns, addressed by EXACTLY ONE of rmaId (one return authorization) or orderId (every RMA of one original order, ordered by line number then id; an order with no returns, or an unknown one, answers an empty list). Each return carries its orderId and lineNo, the work unit it shipped in, sku, quantity, site, reasonCode, status, the rejectionCode of a refused return, the instant the return window ends and the aggregate version. Answers a 404 problem for an unknown rmaId. Persists nothing.",
 				Tags:        []string{"returns", "rma", "read"},
-				InputModes:  []string{"application/json"},
+				InputModes:  []string{contentTypeJSON},
 				Examples: []string{
 					`{"skill":"return_status","arguments":{"rmaId":"rma-1b4e28ba"}}`,
 					`{"skill":"return_status","arguments":{"orderId":"ord-7c9e"}}`,
@@ -99,7 +103,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				Name:        "Read the disposition policy",
 				Description: "Read the disposition policy table: version, returnWindowDays, maxUnitsPerLine, the vetoOutcome a guardrail demotes to, declaredAt and the rules mapping each inspection grade (A, B, C, SCRAP) and product class to an outcome (RESTOCK, REFURBISH, LIQUIDATE, DISPOSE, RTV; \"*\" is a rule's default product class). Omitting version reads the CURRENT policy; a positive version reads that declared one (the policy is append-only). Answers a 404 problem when no such version exists. Persists nothing.",
 				Tags:        []string{"returns", "disposition", "policy", "read"},
-				InputModes:  []string{"application/json"},
+				InputModes:  []string{contentTypeJSON},
 				Examples: []string{
 					`{"skill":"disposition_policy","arguments":{}}`,
 					`{"skill":"disposition_policy","arguments":{"version":1}}`,
