@@ -10,6 +10,17 @@ import (
 	"github.com/claudioed/returns-processing/internal/domain/returnreceipt"
 )
 
+// The keys of the outbox JSON documents, shared by every payload mapper so a
+// typo cannot drift between events.
+const (
+	keyRMAID     = "rma_id"
+	keyReceiptID = "receipt_id"
+	keyLineNo    = "line_no"
+	keySKU       = "sku"
+	keyQuantity  = "quantity"
+	keySiteID    = "site_id"
+)
+
 // envelope is the persisted payload shape of every outbox row: the domain
 // event's name plus its ALREADY-pinned CloudEvents data (ADR 0004 /
 // .claude/rules/integration-events.md — snake_case field names, RFC 3339
@@ -49,23 +60,23 @@ func RMAPayload(e returnauthorization.Event) ([]byte, error) {
 	switch ev := e.(type) {
 	case returnauthorization.ReturnAuthorized:
 		return build(ev.EventName(), map[string]any{
-			"rma_id":         ev.RMA,
+			keyRMAID:         ev.RMA,
 			"order_id":       ev.OrderRef.OrderID().String(),
-			"line_no":        ev.OrderRef.LineNo(),
-			"sku":            ev.SKU,
-			"quantity":       ev.Quantity,
-			"site_id":        ev.Site,
+			keyLineNo:        ev.OrderRef.LineNo(),
+			keySKU:           ev.SKU,
+			keyQuantity:      ev.Quantity,
+			keySiteID:        ev.Site,
 			"reason_code":    ev.ReasonCode,
 			"window_ends_at": ev.WindowEnds.Format(time.RFC3339),
 			"authorized_at":  ev.Authorized.Format(time.RFC3339),
 		})
 	case returnauthorization.ReturnAuthorizationRejected:
 		return build(ev.EventName(), map[string]any{
-			"rma_id":         ev.RMA,
+			keyRMAID:         ev.RMA,
 			"order_id":       ev.OrderRef.OrderID().String(),
-			"line_no":        ev.OrderRef.LineNo(),
-			"sku":            ev.SKU,
-			"quantity":       ev.Quantity,
+			keyLineNo:        ev.OrderRef.LineNo(),
+			keySKU:           ev.SKU,
+			keyQuantity:      ev.Quantity,
 			"rejection_code": string(ev.RejectionCode),
 			"rejected_at":    ev.RejectedAt.Format(time.RFC3339),
 		})
@@ -82,36 +93,36 @@ func ReceiptPayload(e returnreceipt.Event) ([]byte, error) {
 		lines := make([]map[string]any, 0, len(ev.Lines))
 		for _, l := range ev.Lines {
 			lines = append(lines, map[string]any{
-				"line_no":  l.LineNo,
-				"sku":      l.SKU,
-				"quantity": l.Quantity,
-				"rma_id":   nullable(l.RMAID),
+				keyLineNo:   l.LineNo,
+				keySKU:      l.SKU,
+				keyQuantity: l.Quantity,
+				keyRMAID:    nullable(l.RMAID),
 			})
 		}
 		return build(ev.EventName(), map[string]any{
-			"receipt_id": ev.Receipt,
-			"rma_id":     nullable(ev.RMAID),
-			"site_id":    ev.SiteID,
+			keyReceiptID: ev.Receipt,
+			keyRMAID:     nullable(ev.RMAID),
+			keySiteID:    ev.SiteID,
 			"opened_at":  ev.Opened.Format(time.RFC3339),
 			"lines":      lines,
 		})
 	case returnreceipt.ReturnLineInspected:
 		return build(ev.EventName(), map[string]any{
-			"receipt_id":   ev.Receipt,
-			"line_no":      ev.LineNo,
-			"sku":          ev.SKU,
-			"quantity":     ev.Quantity,
+			keyReceiptID:   ev.Receipt,
+			keyLineNo:      ev.LineNo,
+			keySKU:         ev.SKU,
+			keyQuantity:    ev.Quantity,
 			"grade":        ev.Grade,
 			"reason_codes": ev.ReasonCodes,
 			"inspected_at": ev.Inspected.Format(time.RFC3339),
 		})
 	case returnreceipt.UnexpectedReturnReceived:
 		return build(ev.EventName(), map[string]any{
-			"receipt_id":  ev.Receipt,
-			"line_no":     ev.LineNo,
-			"sku":         ev.SKU,
-			"quantity":    ev.Quantity,
-			"site_id":     ev.SiteID,
+			keyReceiptID:  ev.Receipt,
+			keyLineNo:     ev.LineNo,
+			keySKU:        ev.SKU,
+			keyQuantity:   ev.Quantity,
+			keySiteID:     ev.SiteID,
 			"received_at": ev.Received.Format(time.RFC3339),
 		})
 	default:
@@ -127,10 +138,10 @@ func DispositionPayload(e disposition.Event) ([]byte, error) {
 	case disposition.DispositionDecided:
 		return build(ev.EventName(), map[string]any{
 			"disposition_id": ev.Disposition,
-			"receipt_id":     ev.ReceiptID,
-			"line_no":        ev.LineNo,
-			"sku":            ev.SKU,
-			"quantity":       ev.Quantity,
+			keyReceiptID:     ev.ReceiptID,
+			keyLineNo:        ev.LineNo,
+			keySKU:           ev.SKU,
+			keyQuantity:      ev.Quantity,
 			"grade":          ev.Grade,
 			"outcome":        string(ev.Outcome),
 			"policy_version": ev.PolicyVersion,
@@ -140,15 +151,15 @@ func DispositionPayload(e disposition.Event) ([]byte, error) {
 		})
 	case disposition.ReturnLineStaged:
 		return build(ev.EventName(), map[string]any{
-			"receipt_id":     ev.ReceiptID,
-			"line_no":        ev.LineNo,
-			"sku":            ev.SKU,
-			"quantity":       ev.Quantity,
+			keyReceiptID:     ev.ReceiptID,
+			keyLineNo:        ev.LineNo,
+			keySKU:           ev.SKU,
+			keyQuantity:      ev.Quantity,
 			"condition":      ev.Condition,
 			"received_at":    ev.ReceivedAt.Format(time.RFC3339),
-			"rma_id":         ev.RMAID,
+			keyRMAID:         ev.RMAID,
 			"disposition_id": ev.Disposition,
-			"site_id":        ev.SiteID,
+			keySiteID:        ev.SiteID,
 		})
 	default:
 		return nil, fmt.Errorf("outbox: unknown disposition event %T", e)
