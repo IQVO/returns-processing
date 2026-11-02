@@ -30,9 +30,9 @@ func allocatedMiss(t *testing.T, s AllocatedLinesSeeds) {
 }
 
 func allocatedHit(t *testing.T, s AllocatedLinesSeeds) {
-	s.SeedAllocated("ord-1", 2, "sku-1")
+	s.SeedAllocated("ord-1", 2, fixtureSKU)
 	line, ok := s.Get("ord-1", 2)
-	if !ok || line.SKU != "sku-1" {
+	if !ok || line.SKU != fixtureSKU {
 		t.Fatalf("get = %+v ok=%t", line, ok)
 	}
 	if _, ok := s.Get("ord-1", 3); ok {
@@ -41,7 +41,7 @@ func allocatedHit(t *testing.T, s AllocatedLinesSeeds) {
 }
 
 func allocatedOverwrite(t *testing.T, s AllocatedLinesSeeds) {
-	s.SeedAllocated("ord-1", 2, "sku-1")
+	s.SeedAllocated("ord-1", 2, fixtureSKU)
 	s.SeedAllocated("ord-1", 2, "sku-9")
 	line, ok := s.Get("ord-1", 2)
 	if !ok || line.SKU != "sku-9" {
@@ -136,36 +136,36 @@ func ProductClasses(t *testing.T, newStore func(t *testing.T) ProductClassesSeed
 }
 
 func classMiss(t *testing.T, s ProductClassesSeeds) {
-	if _, ok := s.Get("sku-1"); ok {
+	if _, ok := s.Get(fixtureSKU); ok {
 		t.Fatal("an unseeded sku must read as unclassified")
 	}
 }
 
 func classHit(t *testing.T, s ProductClassesSeeds) {
-	s.SeedClass("sku-1", []string{"class:Standard"}, "Ambient", 3)
-	pc, ok := s.Get("sku-1")
+	s.SeedClass(fixtureSKU, []string{fixtureClass}, "Ambient", 3)
+	pc, ok := s.Get(fixtureSKU)
 	if !ok || pc.TemperatureClass != "Ambient" || pc.Version != 3 {
 		t.Fatalf("get = %+v ok=%t", pc, ok)
 	}
-	if len(pc.Tags) != 1 || pc.Tags[0] != "class:Standard" {
+	if len(pc.Tags) != 1 || pc.Tags[0] != fixtureClass {
 		t.Fatalf("tags = %v", pc.Tags)
 	}
 }
 
 func classNewerWins(t *testing.T, s ProductClassesSeeds) {
-	s.SeedClass("sku-1", []string{"class:Standard"}, "Ambient", 3)
-	s.SeedClass("sku-1", []string{"class:Hazmat", "hazmat", "dot:3"}, "Frozen", 4)
-	pc, ok := s.Get("sku-1")
+	s.SeedClass(fixtureSKU, []string{fixtureClass}, "Ambient", 3)
+	s.SeedClass(fixtureSKU, []string{"class:Hazmat", "hazmat", "dot:3"}, "Frozen", 4)
+	pc, ok := s.Get(fixtureSKU)
 	if !ok || pc.Version != 4 || pc.TemperatureClass != "Frozen" {
 		t.Fatalf("get = %+v ok=%t", pc, ok)
 	}
 }
 
 func classOlderLoses(t *testing.T, s ProductClassesSeeds) {
-	s.SeedClass("sku-1", []string{"class:Hazmat", "hazmat", "dot:3"}, "Frozen", 4)
+	s.SeedClass(fixtureSKU, []string{"class:Hazmat", "hazmat", "dot:3"}, "Frozen", 4)
 	// a replayed older version must not overwrite the newer copy
-	s.SeedClass("sku-1", []string{"class:Standard"}, "Ambient", 3)
-	pc, ok := s.Get("sku-1")
+	s.SeedClass(fixtureSKU, []string{fixtureClass}, "Ambient", 3)
+	pc, ok := s.Get(fixtureSKU)
 	if !ok || pc.Version != 4 || pc.TemperatureClass != "Frozen" {
 		t.Fatalf("get = %+v ok=%t (an old version overwrote the copy)", pc, ok)
 	}

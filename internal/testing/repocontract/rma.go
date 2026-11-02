@@ -43,8 +43,8 @@ func wantErr(t *testing.T, got, want error) {
 func Authorized(t *testing.T, id, orderID string, lineNo int32, qty int64) *returnauthorization.RMA {
 	t.Helper()
 	rma, err := returnauthorization.Request(returnauthorization.RequestInput{
-		RMAID: id, OrderID: orderID, LineNo: lineNo, SKU: "sku-1",
-		Quantity: qty, SiteID: "SITE1", ReasonCode: "DAMAGED",
+		RMAID: id, OrderID: orderID, LineNo: lineNo, SKU: fixtureSKU,
+		Quantity: qty, SiteID: fixtureSite, ReasonCode: "DAMAGED",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -65,8 +65,8 @@ func Authorized(t *testing.T, id, orderID string, lineNo int32, qty int64) *retu
 func Rejected(t *testing.T, id, orderID string, lineNo int32) *returnauthorization.RMA {
 	t.Helper()
 	rma, err := returnauthorization.Request(returnauthorization.RequestInput{
-		RMAID: id, OrderID: orderID, LineNo: lineNo, SKU: "sku-1",
-		Quantity: 1, SiteID: "SITE1", ReasonCode: "DAMAGED",
+		RMAID: id, OrderID: orderID, LineNo: lineNo, SKU: fixtureSKU,
+		Quantity: 1, SiteID: fixtureSite, ReasonCode: "DAMAGED",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func Rejected(t *testing.T, id, orderID string, lineNo int32) *returnauthorizati
 // (sku-1 x 3 against rma-1) and one UNEXPECTED line (sku-2 x 1).
 func Opened(t *testing.T, id string) *returnreceipt.Receipt {
 	t.Helper()
-	m, err := returnreceipt.MatchedLine(1, "sku-1", 3, "rma-1")
+	m, err := returnreceipt.MatchedLine(1, fixtureSKU, 3, fixtureRMA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func Opened(t *testing.T, id string) *returnreceipt.Receipt {
 		t.Fatal(err)
 	}
 	r, err := returnreceipt.Open(returnreceipt.OpenInput{
-		ReceiptID: id, RMAID: "rma-1", SiteID: "SITE1",
+		ReceiptID: id, RMAID: fixtureRMA, SiteID: fixtureSite,
 		Lines: []returnreceipt.Line{m, u}, At: T0,
 	})
 	if err != nil {
@@ -126,9 +126,9 @@ func Decided(t *testing.T, id, receiptID string, lineNo int32) *disposition.Disp
 	t.Helper()
 	d, err := disposition.DecideForLine(disposition.LineDecision{
 		DispositionID: id, ReceiptID: receiptID, LineNo: lineNo,
-		SKU: "sku-1", Quantity: 3, Grade: shared.GradeA,
-		Classification: disposition.Classification{SKU: "sku-1", ProductClass: "*", Classified: true},
-		Policy:         Declared(t, 1), SiteID: "SITE1", RMAID: "rma-1",
+		SKU: fixtureSKU, Quantity: 3, Grade: shared.GradeA,
+		Classification: disposition.Classification{SKU: fixtureSKU, ProductClass: "*", Classified: true},
+		Policy:         Declared(t, 1), SiteID: fixtureSite, RMAID: fixtureRMA,
 		ReceivedAt: T0, DecidedAt: T0.Add(time.Hour),
 	})
 	if err != nil {
@@ -174,9 +174,9 @@ func rmaNotFound(t *testing.T, r ports.ReturnAuthorizationRepo) {
 }
 
 func rmaRoundTrip(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	in := Authorized(t, "rma-1", "ord-1", 2, 3)
+	in := Authorized(t, fixtureRMA, "ord-1", 2, 3)
 	must(t, r.Save(bg, in))
-	got, err := r.FindByID(bg, "rma-1")
+	got, err := r.FindByID(bg, fixtureRMA)
 	must(t, err)
 	if got.Status() != returnauthorization.StatusAuthorized || got.Version() != 1 {
 		t.Fatalf("state = %s/%d", got.Status(), got.Version())
@@ -190,9 +190,9 @@ func rmaRoundTrip(t *testing.T, r ports.ReturnAuthorizationRepo) {
 }
 
 func rmaRejectedRoundTrip(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	in := Rejected(t, "rma-1", "ord-1", 2)
+	in := Rejected(t, fixtureRMA, "ord-1", 2)
 	must(t, r.Save(bg, in))
-	got, err := r.FindByID(bg, "rma-1")
+	got, err := r.FindByID(bg, fixtureRMA)
 	must(t, err)
 	if got.Status() != returnauthorization.StatusRejected ||
 		got.RejectionCode() != returnauthorization.RejectReturnWindowExpired {
@@ -204,11 +204,11 @@ func rmaRejectedRoundTrip(t *testing.T, r ports.ReturnAuthorizationRepo) {
 }
 
 func rmaOpenLookup(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	must(t, r.Save(bg, Authorized(t, "rma-1", "ord-1", 2, 3)))
+	must(t, r.Save(bg, Authorized(t, fixtureRMA, "ord-1", 2, 3)))
 	must(t, r.Save(bg, Rejected(t, "rma-2", "ord-1", 4)))
 	got, err := r.FindOpenByOrderLine(bg, "ord-1", 2)
 	must(t, err)
-	if got.ID() != "rma-1" {
+	if got.ID() != fixtureRMA {
 		t.Fatalf("open lookup = %s", got.ID())
 	}
 	if _, err := r.FindOpenByOrderLine(bg, "ord-1", 4); !errors.Is(err, ports.ErrNotFound) {
@@ -233,7 +233,7 @@ func rmaListByOrder(t *testing.T, r ports.ReturnAuthorizationRepo) {
 }
 
 func rmaVersionGuard(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	first := Authorized(t, "rma-1", "ord-1", 2, 3)
+	first := Authorized(t, fixtureRMA, "ord-1", 2, 3)
 	must(t, r.Save(bg, first))
 	// re-saving the same version is a concurrent modification
 	wantErr(t, r.Save(bg, first), ports.ErrConcurrentModification)
@@ -242,12 +242,12 @@ func rmaVersionGuard(t *testing.T, r ports.ReturnAuthorizationRepo) {
 	must(t, r.Save(bg, first))
 	// a second writer's +1 (loaded before the transition above) is refused:
 	// its guard version no longer matches the stored row
-	second := Authorized(t, "rma-1", "ord-1", 2, 3)
+	second := Authorized(t, fixtureRMA, "ord-1", 2, 3)
 	must(t, second.MarkReceived(T0.Add(30*time.Minute)))
 	wantErr(t, r.Save(bg, second), ports.ErrConcurrentModification)
 	// saving a fresh aggregate over an existing id is refused too
-	wantErr(t, r.Save(bg, Authorized(t, "rma-1", "ord-1", 2, 3)), ports.ErrConcurrentModification)
-	got, err := r.FindByID(bg, "rma-1")
+	wantErr(t, r.Save(bg, Authorized(t, fixtureRMA, "ord-1", 2, 3)), ports.ErrConcurrentModification)
+	got, err := r.FindByID(bg, fixtureRMA)
 	must(t, err)
 	if got.Version() != 2 || got.Status() != returnauthorization.StatusReceived {
 		t.Fatalf("stored = %s/%d", got.Status(), got.Version())
@@ -255,7 +255,7 @@ func rmaVersionGuard(t *testing.T, r ports.ReturnAuthorizationRepo) {
 }
 
 func rmaOneOpen(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	must(t, r.Save(bg, Authorized(t, "rma-1", "ord-1", 2, 3)))
+	must(t, r.Save(bg, Authorized(t, fixtureRMA, "ord-1", 2, 3)))
 	wantErr(t, r.Save(bg, Authorized(t, "rma-2", "ord-1", 2, 1)), returnauthorization.ErrOpenRMAExists)
 	if _, err := r.FindByID(bg, "rma-2"); !errors.Is(err, ports.ErrNotFound) {
 		t.Fatal("the refused rma must not have been stored")
@@ -263,19 +263,19 @@ func rmaOneOpen(t *testing.T, r ports.ReturnAuthorizationRepo) {
 }
 
 func rmaTerminalFreesLine(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	must(t, r.Save(bg, Rejected(t, "rma-1", "ord-1", 2)))
+	must(t, r.Save(bg, Rejected(t, fixtureRMA, "ord-1", 2)))
 	must(t, r.Save(bg, Authorized(t, "rma-2", "ord-1", 2, 1)))
 }
 
 func rmaOneOpenScope(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	must(t, r.Save(bg, Authorized(t, "rma-1", "ord-1", 2, 3)))
+	must(t, r.Save(bg, Authorized(t, fixtureRMA, "ord-1", 2, 3)))
 	must(t, r.Save(bg, Authorized(t, "rma-2", "ord-1", 3, 3))) // other line
 	must(t, r.Save(bg, Authorized(t, "rma-3", "ord-2", 2, 3))) // other order
 }
 
 func rmaNoPendingEvents(t *testing.T, r ports.ReturnAuthorizationRepo) {
-	must(t, r.Save(bg, Authorized(t, "rma-1", "ord-1", 2, 3)))
-	got, err := r.FindByID(bg, "rma-1")
+	must(t, r.Save(bg, Authorized(t, fixtureRMA, "ord-1", 2, 3)))
+	got, err := r.FindByID(bg, fixtureRMA)
 	must(t, err)
 	if events := got.DomainEvents(); len(events) != 0 {
 		t.Fatalf("events = %v", events)

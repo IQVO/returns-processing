@@ -362,9 +362,9 @@ func TestRelay_AttemptCapExcludesRowAfterNFailures(t *testing.T) {
 		if n != 0 {
 			t.Fatalf("pass %d published %d rows, want 0", pass, n)
 		}
-		var sf *outbox.SendFailure
+		var sf *outbox.SendFailureError
 		if !errors.As(err, &sf) {
-			t.Fatalf("pass %d err = %v, want an *outbox.SendFailure", pass, err)
+			t.Fatalf("pass %d err = %v, want an *outbox.SendFailureError", pass, err)
 		}
 		if !errors.Is(err, boom) {
 			t.Fatalf("pass %d err = %v, want it to wrap the broker error", pass, err)

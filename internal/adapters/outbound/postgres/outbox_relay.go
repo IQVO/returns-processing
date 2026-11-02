@@ -162,7 +162,7 @@ func NewOutboxRelay(pool *pgxpool.Pool, encoder RelayEncoder, sink RelaySink, op
 // RelayOnce runs exactly one claim-and-send pass and reports how many rows
 // left the outbox (published or dead-lettered), for tests to drive
 // deterministically; production uses Run's loop. Unlike Run it returns the
-// pass's error — a send failure as an *outbox.SendFailure — so a test can
+// pass's error — a send failure as an *outbox.SendFailureError — so a test can
 // assert on it without racing a background loop.
 func (r *OutboxRelay) RelayOnce(ctx context.Context) (int, error) {
 	tx, err := r.pool.Begin(ctx)
@@ -301,7 +301,7 @@ func (r *OutboxRelay) deadLetter(ctx context.Context, tx pgx.Tx, row claimedRow,
 
 // recordFailure stages the failed row's attempts+1 and a pushed-back
 // next_attempt_at, commits the pass (every row already relayed in it is
-// deleted in the same tx) and returns the failure as an *outbox.SendFailure
+// deleted in the same tx) and returns the failure as an *outbox.SendFailureError
 // carrying the row's new attempt count, so the pass stops here and the next
 // one retries this row first. The updates use a ctx that survives
 // cancellation, so a shutdown mid-pass still persists what was relayed.
@@ -309,7 +309,7 @@ func (r *OutboxRelay) recordFailure(ctx context.Context, tx pgx.Tx, row claimedR
 	dctx := context.WithoutCancel(ctx)
 	attempts := r.rowAttempts(dctx, tx, row)
 	next := time.Now().Add(retryBackoff(r.interval, attempts, r.maxBackoff))
-	failure := &outbox.SendFailure{RowID: row.id, Message: msg, Err: sendErr}
+	failure := &outbox.SendFailureError{RowID: row.id, Message: msg, Err: sendErr}
 	if _, err := tx.Exec(dctx, `
 		UPDATE outbox SET attempts = attempts + 1, next_attempt_at = $2 WHERE id = $1
 	`, row.id, next); err != nil {
