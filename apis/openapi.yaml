@@ -59,19 +59,22 @@ paths:
       operationId: authorizeReturn
       summary: Authorize a return (open an RMA)
       description: |
-        Authorizes returning `quantity` units of one SKU of an order line.
-        The line must be **allocated** (order-management's local copy) and
+        Authorizes returning `quantity` units of one order line. The line must
+        be **allocated** (order-management's local copy; the SKU of the RMA is
+        taken from that copy, the request's `sku` is accepted and ignored) and
         **manifested** (a work unit `{order_id}-line-{line_no}` in the
         fulfillment-execution local copy), and now must be inside the policy's
-        return window (409 `return-not-authorizable` with rejection code
+        return window. A refusal is 409 `return-not-authorizable` whose
+        `detail` starts with the rejection code `ORDER_LINE_NOT_ALLOCATED`,
         `LINE_NOT_MANIFESTED`, `RETURN_WINDOW_EXPIRED` or
-        `QUANTITY_EXCEEDS_POLICY` otherwise). At most ONE open RMA may exist
-        per (orderRef, lineNo) (409 `open-rma-exists`). `quantity` must be in
+        `QUANTITY_EXCEEDS_POLICY`; the same 409 answers a request made before
+        any disposition policy is declared. At most ONE open RMA may exist per
+        (orderId, lineNo) (409 `open-rma-exists`). `quantity` must be in
         `[1, policy.maxUnitsPerLine]`; the shipped-quantity check is planned,
-        not built (ADR 0003). Publishes `ReturnAuthorized` (or
-        `ReturnAuthorizationRejected` for a decided rejection) through the
-        outbox. Requires an `Idempotency-Key`; replaying the same key and body
-        returns the original response.
+        not built (ADR 0003). A refusal persists nothing and publishes no
+        event: only a successful authorization publishes `ReturnAuthorized`
+        through the outbox. Requires an `Idempotency-Key`; replaying the same
+        key and body returns the original response.
       tags: [Returns]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -112,7 +115,6 @@ paths:
                 reasonCode: DAMAGED
                 status: AUTHORIZED
                 windowEndsAt: "2026-11-20T09:30:00Z"
-                authorizedAt: "2026-10-21T09:30:00Z"
                 version: 1
         "400":
           $ref: "#/components/responses/BadRequest"
@@ -128,8 +130,11 @@ paths:
         RMA id, one keyset page at a time (`limit` 1-500, default 100; `cursor` is the
         opaque `nextCursor` of the previous page, absent on the last page;
         repeat `orderRef` on every page request). An unknown order answers
-        `200` with `{"items":[]}`, never `404`. A malformed `limit` is 400
-        `invalid-limit`, an undecodable `cursor` is 400 `invalid-cursor`.
+        `200` with `{"items":[]}`, never `404`. A missing or over-long
+        `orderRef` is 400 `malformed-request-body`, a malformed `limit` is 400
+        `invalid-limit`, an undecodable `cursor` is 400 `invalid-cursor`. A
+        query parameter this operation does not declare is ignored (there is
+        no `unknown-query-parameter` check).
       tags: [Returns]
       parameters:
         - name: orderRef
@@ -140,7 +145,6 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
-            pattern: '\S'
           example: ord-7c9e2f1a
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -162,7 +166,6 @@ paths:
                     reasonCode: DAMAGED
                     status: AUTHORIZED
                     windowEndsAt: "2026-11-20T09:30:00Z"
-                    authorizedAt: "2026-10-21T09:30:00Z"
                     version: 1
         "400":
           $ref: "#/components/responses/BadRequest"
@@ -175,7 +178,7 @@ paths:
     get:
       operationId: getReturn
       summary: Get an RMA
-      description: Returns the RMA with its status, window and version.
+      description: Returns the RMA with its status, window and version. 404 `rma-not-found` for an id no RMA has; 400 for an id longer than 64 characters or holding a space, tab or `/`.
       tags: [Returns]
       responses:
         "200":
@@ -199,12 +202,16 @@ paths:
       summary: Open a return receipt against an RMA
       description: |
         Records the physical arrival of returned goods. Each line either
-        matches the RMA (carrying its own `rmaId`, which may differ from the
-        path's RMA when several RMAs ship in one parcel) or is explicitly
-        `kind: UNEXPECTED`; there is no silent third state. UNEXPECTED lines
-        raise `UnexpectedReturnReceived` for exception-management. Moves the
-        RMA to RECEIVED. Publishes `ReturnReceiptOpened` through the outbox.
-        Requires an `Idempotency-Key`.
+        matches an RMA (`kind: MATCHED`, carrying its own `rmaId`, which may
+        differ from the path's RMA when several RMAs ship in one parcel) or is
+        explicitly `kind: UNEXPECTED`; any other shape is 400 `invalid-line`
+        (no silent third state). UNEXPECTED lines raise
+        `UnexpectedReturnReceived` for exception-management. Publishes
+        `ReturnReceiptOpened` through the outbox. The service does NOT look
+        the RMA up: an `rmaId` (path or line) that names no RMA is accepted,
+        and the RMA keeps its status (nothing moves it to RECEIVED today), so
+        this operation has no 404 and no `rma-not-receivable` 409; its 409 is
+        `idempotency-key-reused`. Requires an `Idempotency-Key`.
       tags: [Receipts]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -235,8 +242,6 @@ paths:
                 $ref: "#/components/schemas/Receipt"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "500":
@@ -251,11 +256,17 @@ paths:
       summary: Grade a receipt line and decide its disposition
       description: |
         Records the inspection grade of one receipt line and runs
-        `DecideDisposition` in the same transaction. The inspected quantity
-        must be in `[1, received quantity]` and a line is inspected exactly
-        once (409 `line-already-inspected`). Publishes `ReturnLineInspected`
-        and `DispositionDecided`; a RESTOCK outcome additionally publishes
-        `ReturnLineStaged`. Requires an `Idempotency-Key`.
+        `DecideDisposition` in the same transaction. `quantity` is required
+        and must be in `[1, received quantity]` (400 `invalid-quantity` when
+        absent or below 1, 409 `inspected-exceeds-received` above the received
+        quantity); an inspection of fewer units than were received still
+        closes the line, because a line is inspected exactly once (409
+        `line-already-inspected`). 404 `receipt-not-found` answers an unknown
+        receipt and a receipt with no such line; it also answers the call
+        when no disposition policy was ever declared. Publishes
+        `ReturnLineInspected` and `DispositionDecided`; a RESTOCK outcome
+        additionally publishes `ReturnLineStaged`. Requires an
+        `Idempotency-Key`.
       tags: [Receipts]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -298,7 +309,8 @@ paths:
         Creates a NEW Disposition that supersedes the given one, carrying the
         original's receipt line, grade and quantity, the operator's `outcome`
         and a mandatory `reason` (400 `override-reason-required` when blank).
-        The original decision is never mutated. A RESTOCK override raises its
+        An `outcome` outside the five values is 400 `invalid-policy`. The
+        original decision is never mutated. A RESTOCK override raises its
         own `ReturnLineStaged` (idempotent on its disposition id). Requires an
         `Idempotency-Key`.
       tags: [Dispositions]
@@ -339,13 +351,16 @@ paths:
       operationId: declareDispositionPolicy
       summary: Declare a disposition policy version
       description: |
-        Declares policy version `version` (a positive integer; it must be
-        current + 1, 409 `concurrent-modification` otherwise). The table maps
+        Declares policy version `version` (any positive integer; the service
+        does not require it to be current + 1, and the declared version
+        becomes the current one). The table maps
         (grade, productClass) to an outcome; the entry `productClass: "*"` is
         the required default per grade, which makes `Decide` total. Also
         carries the return window days, the max units per line and the
         `vetoOutcome` a guardrail demotion falls back to (default DISPOSE).
-        Policy versions are append-only; an old version is never rewritten.
+        An `outcome` outside the five values is 400 `invalid-policy`, a grade
+        outside A/B/C/SCRAP 400 `invalid-grade`. `returnWindowDays` defaults to
+        0 when omitted. The 409 of this operation is `idempotency-key-reused`.
         Requires an `Idempotency-Key`.
       tags: [Disposition policies]
       parameters:
@@ -410,7 +425,9 @@ paths:
         policy version, over `from`/`to` (a decision counts in the day its
         `DispositionDecided` event time falls in). Omitted bounds default to
         the 30 days ending now; the window is at most 366 days. A bounded
-        report, not a collection: it does not page.
+        report, not a collection: it does not page. `granularity` is validated
+        (400 for anything but `day`) although the mix is one whole-window
+        aggregate and does not bucket by it.
       tags: [Reports]
       x-pagination-exempt: report
       servers:
@@ -420,6 +437,7 @@ paths:
         - $ref: "#/components/parameters/ReportFrom"
         - $ref: "#/components/parameters/ReportTo"
         - $ref: "#/components/parameters/ReportSiteId"
+        - $ref: "#/components/parameters/ReportGranularity"
       responses:
         "200":
           description: The disposition mix.
@@ -519,7 +537,7 @@ paths:
     get:
       operationId: healthz
       summary: Liveness probe
-      description: 200 while the process is running.
+      description: 200 while the process is running (also served by the returns-reports binary).
       tags: [Health]
       responses:
         "200":
@@ -533,7 +551,7 @@ paths:
       operationId: readyz
       summary: Readiness probe
       description: |
-        200 when the service can serve traffic. 503 while draining for
+        200 `{"status":"ready"}` when the service can serve traffic. 503 while draining for
         shutdown (`{"status":"not_ready"}`) or while Postgres or the Kafka
         broker is unreachable (problem `dependency-unavailable`). Kafka
         readiness is reachability only (a broker answers a metadata request
@@ -548,8 +566,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Status"
         "503":
-          description: Not ready.
+          description: Not ready (draining, or a dependency is unreachable).
           content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+              example:
+                status: not_ready
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
@@ -566,34 +589,34 @@ components:
       name: rmaId
       in: path
       required: true
-      description: The RMA id (`rma-` followed by a unique suffix, at most 64 characters).
+      description: The RMA id (service-minted ids look like `rma-<suffix>`; the prefix is not enforced). 1-64 characters without a space, tab or `/`; any other value is 400, and an unknown id of this shape is 404.
       schema:
         type: string
-        minLength: 6
+        minLength: 1
         maxLength: 64
-        pattern: "^rma-[^\\s/]+$"
+        pattern: "^[^ \\t/]+$"
       example: rma-4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f80
     ReceiptId:
       name: receiptId
       in: path
       required: true
-      description: The receipt id (`rcpt-` followed by a unique suffix, at most 64 characters).
+      description: The receipt id (service-minted ids look like `rcpt-<suffix>`; the prefix is not enforced). 1-64 characters without a space, tab or `/`; any other value is 400, and an unknown id of this shape is 404.
       schema:
         type: string
-        minLength: 6
+        minLength: 1
         maxLength: 64
-        pattern: "^rcpt-[^\\s/]+$"
+        pattern: "^[^ \\t/]+$"
       example: rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d
     DispositionId:
       name: dispositionId
       in: path
       required: true
-      description: The disposition id (`disp-` followed by a unique suffix, at most 64 characters).
+      description: The disposition id (service-minted ids look like `disp-<suffix>`; the prefix is not enforced). 1-64 characters without a space, tab or `/`; any other value is 400, and an unknown id of this shape is 404.
       schema:
         type: string
-        minLength: 6
+        minLength: 1
         maxLength: 64
-        pattern: "^disp-[^\\s/]+$"
+        pattern: "^[^ \\t/]+$"
       example: disp-0c1d2e3f-4a5b-4e6f-9a7b-8c9d0e1f2a3b
     LineNo:
       name: lineNo
@@ -609,7 +632,7 @@ components:
       name: version
       in: path
       required: true
-      description: The policy version to declare (current + 1).
+      description: The policy version to declare (a positive integer).
       schema:
         type: integer
         format: int64
@@ -817,7 +840,7 @@ components:
                 detail: no disposition policy version exists yet
                 instance: /disposition-policies/current
     Conflict:
-      description: The resource is in the wrong state for the command, another request changed it first, or the Idempotency-Key was reused.
+      description: The command is refused by the domain rules, another request changed the resource first, or the Idempotency-Key was reused.
       content:
         application/problem+json:
           schema:
@@ -855,14 +878,22 @@ components:
                 status: 409
                 detail: one open RMA per (orderRef, lineNo); close or receive the open one first
                 instance: /returns
-            rmaNotAuthorizableState:
-              summary: The RMA cannot receive goods in its state
+            orderLineNotAllocated:
+              summary: The order line is not in the allocations copy
               value:
-                type: https://errors.returns-processing.warehouse-systems.dev/rma-not-receivable
-                title: The RMA cannot receive goods
+                type: https://errors.returns-processing.warehouse-systems.dev/return-not-authorizable
+                title: The order line is not authorizable
                 status: 409
-                detail: only an AUTHORIZED RMA can be received
-                instance: /returns/rma-1/receipts
+                detail: "ORDER_LINE_NOT_ALLOCATED: the order line is not in the allocations copy"
+                instance: /returns
+            noPolicyDeclared:
+              summary: No disposition policy exists yet
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/return-not-authorizable
+                title: The order line is not authorizable
+                status: 409
+                detail: no disposition policy version is declared; PUT /disposition-policies/1 first
+                instance: /returns
             lineAlreadyInspected:
               summary: The line was already inspected
               value:
@@ -886,7 +917,7 @@ components:
                 title: The resource was modified by another request; re-fetch the latest version and retry
                 status: 409
                 detail: concurrent modification
-                instance: /disposition-policies/4
+                instance: /dispositions/disp-1/overrides
             idempotencyKeyReused:
               summary: The Idempotency-Key was used with a different request
               value:
@@ -902,6 +933,14 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
           examples:
+            invalidReportGranularity:
+              summary: granularity is not day
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/invalid-report-granularity
+                title: granularity must be "day"
+                status: 400
+                detail: 'granularity must be "day": granularity must be "day", got "hour"'
+                instance: /reports/value-recovery
             invalidReportRange:
               summary: Invalid range
               value:
@@ -940,7 +979,9 @@ components:
       type: string
       description: |
         Lifecycle state of an RMA. `REJECTED` and `CLOSED` are terminal:
-        nothing leaves them.
+        nothing leaves them. Through this API an RMA is only ever created
+        `AUTHORIZED`: a refused authorization persists nothing, and no
+        operation moves an RMA to `RECEIVED` or `CLOSED` today.
       enum: [REQUESTED, AUTHORIZED, REJECTED, RECEIVED, CLOSED]
     Grade:
       type: string
@@ -963,12 +1004,11 @@ components:
     AuthorizeReturnRequest:
       type: object
       additionalProperties: false
-      required: [orderId, lineNo, sku, quantity, siteId, reasonCode]
+      required: [orderId, lineNo, quantity, siteId, reasonCode]
       properties:
         orderId:
           type: string
           minLength: 1
-          maxLength: 64
           pattern: '\S'
           description: The order the returned line belongs to.
         lineNo:
@@ -978,10 +1018,7 @@ components:
           description: The order line (1-based).
         sku:
           type: string
-          minLength: 1
-          maxLength: 64
-          pattern: '\S'
-          description: The SKU coming back.
+          description: Accepted and ignored; the RMA's SKU comes from the allocations copy (ADR 0003).
         quantity:
           type: integer
           format: int64
@@ -990,13 +1027,12 @@ components:
         siteId:
           type: string
           minLength: 1
-          maxLength: 64
           pattern: '\S'
           description: The site the goods come back to.
         reasonCode:
           type: string
           minLength: 1
-          maxLength: 64
+          pattern: '\S'
           description: The operator's return reason (e.g. DAMAGED, WRONG_ITEM, NOT_NEEDED).
 
     Return:
@@ -1010,13 +1046,9 @@ components:
         quantity: { type: integer, format: int64, minimum: 1 }
         siteId: { type: string }
         reasonCode: { type: string, description: The return reason of an AUTHORIZED RMA. }
-        rejectionCode: { type: string, description: "Why a REQUESTED RMA was rejected: LINE_NOT_MANIFESTED, RETURN_WINDOW_EXPIRED, OPEN_RMA_EXISTS or QUANTITY_EXCEEDS_POLICY." }
+        rejectionCode: { type: string, description: "Present only on a REJECTED RMA; the API never stores one today (a refusal is a 409), so it is not served." }
         status: { $ref: "#/components/schemas/ReturnStatus" }
         windowEndsAt: { type: string, format: date-time, description: The last instant goods may arrive; present once AUTHORIZED. }
-        authorizedAt: { type: string, format: date-time }
-        rejectedAt: { type: string, format: date-time }
-        receivedAt: { type: string, format: date-time, description: When the first receipt moved the RMA to RECEIVED. }
-        closedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 1, description: "Starts at 1, +1 per accepted transition; guards every write (409 on a lost update)." }
     ReturnPage:
       type: object
@@ -1037,7 +1069,6 @@ components:
         siteId:
           type: string
           minLength: 1
-          maxLength: 64
           pattern: '\S'
           description: The site the parcel arrived at.
         lines:
@@ -1052,12 +1083,13 @@ components:
       required: [lineNo, sku, quantity, kind]
       properties:
         lineNo: { type: integer, format: int32, minimum: 1 }
-        sku: { type: string, minLength: 1, maxLength: 64, pattern: '\S' }
+        sku: { type: string, minLength: 1, pattern: '\S' }
         quantity: { type: integer, format: int64, minimum: 1 }
         kind: { $ref: "#/components/schemas/LineKind" }
         rmaId:
           type: string
-          description: Required when kind is MATCHED; must be absent (or null) when kind is UNEXPECTED.
+          nullable: true
+          description: Required (non-blank) when kind is MATCHED; must be absent, null or empty when kind is UNEXPECTED.
 
     ReceiptLine:
       type: object
@@ -1068,18 +1100,17 @@ components:
         quantity: { type: integer, format: int64, minimum: 1, description: The received quantity. }
         kind: { $ref: "#/components/schemas/LineKind" }
         rmaId: { type: string, description: The RMA this line matched; absent on an UNEXPECTED line. }
-        inspected: { type: boolean, description: Whether the line already has a grade. }
+        inspected: { type: boolean, description: "Whether the line already has a grade. The only receipt this API returns is the one just opened, so it is always false here." }
         inspectedQuantity: { type: integer, format: int64, minimum: 1, description: Present once inspected; never above quantity. }
         grade: { $ref: "#/components/schemas/Grade" }
         reasonCodes: { type: array, items: { type: string }, description: Why the grade; present once inspected. }
-        inspectedAt: { type: string, format: date-time }
 
     Receipt:
       type: object
-      required: [receiptId, siteId, openedAt, lines, version]
+      required: [receiptId, rmaId, siteId, openedAt, lines, version]
       properties:
         receiptId: { type: string, example: rcpt-8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d }
-        rmaId: { type: string, nullable: true, description: The RMA the parcel was opened against; null when the whole parcel was unexpected. }
+        rmaId: { type: string, nullable: true, description: "The RMA the parcel was opened against (the path's rmaId, so always set by this API); null if none." }
         siteId: { type: string }
         openedAt: { type: string, format: date-time }
         lines:
@@ -1090,22 +1121,22 @@ components:
     InspectReturnLineRequest:
       type: object
       additionalProperties: false
-      required: [grade, reasonCodes]
+      required: [grade, quantity]
       properties:
         grade: { $ref: "#/components/schemas/Grade" }
         quantity:
           type: integer
           format: int64
           minimum: 1
-          description: The inspected quantity; defaults to the line's full received quantity and never exceeds it.
+          description: The inspected quantity, at most the line's received quantity. Required; there is no default.
         reasonCodes:
           type: array
-          items: { type: string, maxLength: 64 }
-          description: Why this grade (e.g. CUSTOMER_DAMAGE, OPENED_BOX, MISSING_PARTS).
+          items: { type: string }
+          description: Why this grade (e.g. CUSTOMER_DAMAGE, OPENED_BOX, MISSING_PARTS). Optional; when omitted the result echoes null.
 
     Disposition:
       type: object
-      required: [dispositionId, receiptId, lineNo, sku, quantity, grade, outcome, policyVersion, decidedAt, version]
+      required: [dispositionId, receiptId, lineNo, sku, quantity, grade, outcome, policyVersion, staged, decidedAt, version]
       properties:
         dispositionId: { type: string, example: disp-0c1d2e3f-4a5b-4e6f-9a7b-8c9d0e1f2a3b }
         receiptId: { type: string }
@@ -1130,7 +1161,7 @@ components:
         sku: { type: string }
         quantity: { type: integer, format: int64, minimum: 1, description: The inspected quantity. }
         grade: { $ref: "#/components/schemas/Grade" }
-        reasonCodes: { type: array, items: { type: string } }
+        reasonCodes: { type: array, nullable: true, items: { type: string }, description: The request's reasonCodes echoed; null when the request sent none. }
         inspectedAt: { type: string, format: date-time }
         disposition: { $ref: "#/components/schemas/Disposition" }
 
@@ -1143,7 +1174,7 @@ components:
         reason:
           type: string
           minLength: 1
-          maxLength: 500
+          pattern: '\S'
           description: Why the operator overrode the policy; recorded on the new Disposition.
 
     PolicyRule:
@@ -1155,19 +1186,19 @@ components:
         productClass:
           type: string
           minLength: 1
-          maxLength: 64
           description: 'The product classification this rule keys on, or "*" for the per-grade default.'
         outcome: { $ref: "#/components/schemas/Outcome" }
 
     DeclareDispositionPolicyRequest:
       type: object
       additionalProperties: false
-      required: [returnWindowDays, maxUnitsPerLine, rules]
+      required: [maxUnitsPerLine, rules]
       properties:
         returnWindowDays:
           type: integer
           format: int32
           minimum: 0
+          default: 0
           description: How long after authorization the goods may arrive.
         maxUnitsPerLine:
           type: integer
@@ -1184,7 +1215,7 @@ components:
 
     DispositionPolicy:
       type: object
-      required: [version, returnWindowDays, maxUnitsPerLine, rules, declaredAt]
+      required: [version, returnWindowDays, maxUnitsPerLine, vetoOutcome, rules, declaredAt]
       properties:
         version: { type: integer, format: int64, minimum: 1, description: "Starts at 1, +1 per declared version; versions are append-only." }
         returnWindowDays: { type: integer, format: int32, minimum: 0 }
@@ -1272,7 +1303,7 @@ components:
     Problem:
       type: object
       description: RFC 7807 problem document used for every non-2xx response.
-      required: [type, title, status, detail]
+      required: [type, title, status, detail, instance]
       properties:
         type: { type: string, format: uri }
         title: { type: string }
@@ -1283,4 +1314,4 @@ components:
       type: object
       required: [status]
       properties:
-        status: { type: string, example: ok }
+        status: { type: string, description: "`ok` (healthz), `ready` or `not_ready` (readyz).", example: ok }
