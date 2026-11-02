@@ -13,9 +13,9 @@ endpoints — if a screen wants data the API does not serve, cut the screen):
 - returns list by order (`GET /returns?orderRef=`) + authorize (`POST /returns`);
 - RMA detail (`GET /returns/{rmaId}`) with the physical flow: open the receipt
   (`POST /returns/{rmaId}/receipts`), inspect each line
-  (`POST /receipts/{id}/lines/{n}/inspect`, the disposition is decided in the
+  (`POST /receipts/{id}/lines/{n}/inspections`, the disposition is decided in the
   same transaction) and override a decision
-  (`POST /dispositions/{id}/override`). There is NO receipt/disposition GET:
+  (`POST /dispositions/{id}/overrides`). There is NO receipt/disposition GET:
   the panel holds the write responses in screen state; a reload clears it;
 - the current disposition policy (`GET /disposition-policies/current`),
   read-only.
