@@ -46,7 +46,7 @@ export function ReturnsListScreen() {
               onChange={setDraft}
               placeholder="ord-7c9e2f1a"
               required
-              hint="Every RMA of this order, newest first"
+              hint="Every RMA of this order, by order line"
             />
             <SubmitButton>Find returns</SubmitButton>
           </FormRow>

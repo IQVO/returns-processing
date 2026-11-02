@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/claudioed/returns-processing/internal/application/ports"
+	"github.com/claudioed/returns-processing/internal/application/views"
 	"github.com/claudioed/returns-processing/internal/domain/returnauthorization"
 )
 
@@ -141,15 +143,19 @@ func (r *RMAs) FindOpenByOrderLine(ctx context.Context, orderID string, lineNo i
 	return rma, err
 }
 
-// ListByOrder implements ports.ReturnAuthorizationRepo: by line number then
-// id, byte order (the "C" collation) — the same order the memory double
-// returns.
-func (r *RMAs) ListByOrder(ctx context.Context, orderID string) ([]*returnauthorization.RMA, error) {
-	rows, err := queryFor(ctx, r.pool).Query(ctx, `
-		SELECT `+rmaColumns+` FROM return_authorizations
-		WHERE order_id = $1
-		ORDER BY line_no, rma_id
-	`, orderID)
+// ListByOrder implements ports.ReturnAuthorizationRepo: keyset pages by line
+// number then id, byte order (the "C" collation) — the same order the memory
+// double returns. idx_rmas_by_order (order_id, line_no) serves the order.
+func (r *RMAs) ListByOrder(ctx context.Context, orderID string, after *views.ReturnKey, limit int) ([]*returnauthorization.RMA, error) {
+	query := `SELECT ` + rmaColumns + ` FROM return_authorizations WHERE order_id = $1`
+	args := []any{orderID}
+	if after != nil {
+		query += ` AND (line_no, rma_id) > ($2, $3)`
+		args = append(args, after.LineNo, after.ID)
+	}
+	args = append(args, limit)
+	query += ` ORDER BY line_no, rma_id LIMIT $` + strconv.Itoa(len(args))
+	rows, err := queryFor(ctx, r.pool).Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list rmas of order %s: %w", orderID, err)
 	}

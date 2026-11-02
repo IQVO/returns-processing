@@ -12,18 +12,17 @@ What signals exist today, and what deliberately does not.
 ## Metrics
 
 **None.** The service exports no runtime metrics: no Prometheus registry, no `/metrics` handler, no
-OpenTelemetry meters anywhere in `cmd/` or `internal/`. `GET /metrics` is declared in
-`apis/openapi.yaml` (its generated page mirrors the spec), but the router in
-`internal/adapters/inbound/http/server.go` serves only the operations listed on
-[API overview](/docs/api-reference). Implementing the exposition or dropping the spec entry is an
-open item ([Bounded context canvas](/docs/ddd/bounded-context-canvas#open-questions)) — until then,
-the only runtime signals are logs and the two probes.
+OpenTelemetry meters anywhere in `cmd/` or `internal/`. The spec used to declare `GET /metrics`; it
+was dropped in the REST guideline cutover ([ADR 0009](/docs/adr/0009-adopt-the-fleet-rest-api-guideline))
+so `apis/openapi.yaml` matches the router in `internal/adapters/inbound/http/server.go`. Adding the
+exposition later is a new decision — until then, the only runtime signals are logs and the two
+probes.
 
 ## Traces
 
-No tracing SDK is wired. Outgoing Kafka messages MAY carry W3C `traceparent`/`tracestate` headers
-when the writing request provided them (the CloudEvents helper passes headers through), but this
-service starts no spans of its own.
+No tracing SDK is wired. Outgoing Kafka messages carry only the CloudEvents `content-type` header
+(the outbox relay propagates no `traceparent`/`tracestate`), and this service starts no spans of its
+own.
 
 ## Logs
 

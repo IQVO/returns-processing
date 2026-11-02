@@ -34,12 +34,28 @@ describe("api", () => {
     expect(api.to("GET /disposition-policies/current")).toHaveLength(1);
   });
 
+  it("follows nextCursor until it is absent and repeats the filter on every page", async () => {
+    const api = mockApi({
+      "GET /returns": (call) =>
+        call.query.get("cursor") === null
+          ? json({ items: [rma()], nextCursor: "c1" })
+          : call.query.get("cursor") === "c1"
+            ? json({ items: [rma({ rmaId: "rma-2", lineNo: 2 })], nextCursor: "c2" })
+            : json({ items: [rma({ rmaId: "rma-3", lineNo: 3 })] }),
+    });
+    const items = await listReturns("ord-7c9e2f1a");
+    expect(items.map((r) => r.rmaId)).toEqual([RMA_ID, "rma-2", "rma-3"]);
+    const pages = api.to("GET /returns");
+    expect(pages.map((c) => c.query.get("cursor"))).toEqual([null, "c1", "c2"]);
+    expect(pages.every((c) => c.query.get("orderRef") === "ord-7c9e2f1a")).toBe(true);
+  });
+
   it("mints a fresh Idempotency-Key per POST, on every write", async () => {
     const api = mockApi({
       "POST /returns": json(rma(), 201),
       [`POST /returns/${RMA_ID}/receipts`]: json(receipt(), 201),
-      [`POST /receipts/${RECEIPT_ID}/lines/1/inspect`]: json(inspection()),
-      [`POST /dispositions/${DISPOSITION_ID}/override`]: json(disposition({ outcome: "RTV", supersedes: DISPOSITION_ID })),
+      [`POST /receipts/${RECEIPT_ID}/lines/1/inspections`]: json(inspection()),
+      [`POST /dispositions/${DISPOSITION_ID}/overrides`]: json(disposition({ outcome: "RTV", supersedes: DISPOSITION_ID })),
     });
     await authorizeReturn({ orderId: "ord-7c9e2f1a", lineNo: 1, sku: "SKU-1", quantity: 2, siteId: "WH1", reasonCode: "DAMAGED" });
     await openReturnReceipt(RMA_ID, { siteId: "WH1", lines: [{ lineNo: 1, sku: "SKU-1", quantity: 2, kind: "MATCHED", rmaId: RMA_ID }] });
@@ -57,8 +73,8 @@ describe("api", () => {
     const api = mockApi({
       "POST /returns": json(rma(), 201),
       [`POST /returns/${RMA_ID}/receipts`]: json(receipt(), 201),
-      [`POST /receipts/${RECEIPT_ID}/lines/2/inspect`]: json(inspection({ lineNo: 2 })),
-      [`POST /dispositions/${DISPOSITION_ID}/override`]: json(disposition()),
+      [`POST /receipts/${RECEIPT_ID}/lines/2/inspections`]: json(inspection({ lineNo: 2 })),
+      [`POST /dispositions/${DISPOSITION_ID}/overrides`]: json(disposition()),
     });
     await authorizeReturn({ orderId: "ord-1", lineNo: 3, sku: "SKU-9", quantity: 1, siteId: "WH2", reasonCode: "WRONG_ITEM" });
     expect(api.to("POST /returns")[0].body).toEqual({
@@ -71,11 +87,11 @@ describe("api", () => {
       siteId: "WH2", lines: [{ lineNo: 1, sku: "SKU-9", quantity: 1, kind: "UNEXPECTED" }],
     });
     await inspectReturnLine(RECEIPT_ID, 2, { grade: "A", reasonCodes: ["OPENED_BOX"] });
-    expect(api.to(`POST /receipts/${RECEIPT_ID}/lines/2/inspect`)[0].body).toEqual({
+    expect(api.to(`POST /receipts/${RECEIPT_ID}/lines/2/inspections`)[0].body).toEqual({
       grade: "A", reasonCodes: ["OPENED_BOX"],
     });
     await overrideDisposition(DISPOSITION_ID, { outcome: "DISPOSE", reason: "hygiene" });
-    expect(api.to(`POST /dispositions/${DISPOSITION_ID}/override`)[0].body).toEqual({
+    expect(api.to(`POST /dispositions/${DISPOSITION_ID}/overrides`)[0].body).toEqual({
       outcome: "DISPOSE", reason: "hygiene",
     });
   });

@@ -49,8 +49,10 @@ type ReturnAuthorizationRepo interface {
 	// AUTHORIZED or RECEIVED) for orderID's lineNo, backing the
 	// one-open-RMA rule, or ErrNotFound when none is.
 	FindOpenByOrderLine(ctx context.Context, orderID string, lineNo int32) (*returnauthorization.RMA, error)
-	// ListByOrder returns every RMA of the order, by line number then id.
-	ListByOrder(ctx context.Context, orderID string) ([]*returnauthorization.RMA, error)
+	// ListByOrder returns at most limit RMAs of the order, by line number
+	// then id (byte order), strictly after the keyset position after (the
+	// first page when after is nil). limit must be at least 1.
+	ListByOrder(ctx context.Context, orderID string, after *views.ReturnKey, limit int) ([]*returnauthorization.RMA, error)
 }
 
 // ReturnReceiptRepo persists ReturnReceipt aggregates by id. Inside a

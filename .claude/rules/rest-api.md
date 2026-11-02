@@ -13,8 +13,8 @@ Route -> use case, kept in sync with `apis/openapi.yaml`.
 - `GET  /returns/{rmaId}`                              -> `GetReturn`
 - `GET  /returns?orderRef=`                            -> `ListReturnsByOrder` (200 + `[]` on unknown, never 404)
 - `POST /returns/{rmaId}/receipts`                     -> `OpenReturnReceipt` (201)
-- `POST /receipts/{receiptId}/lines/{lineNo}/inspect`  -> `InspectReturnLine` (200; disposition decided in the same tx)
-- `POST /dispositions/{id}/override`                   -> `OverrideDisposition` (200; reason mandatory)
+- `POST /receipts/{receiptId}/lines/{lineNo}/inspections`  -> `InspectReturnLine` (200; disposition decided in the same tx)
+- `POST /dispositions/{id}/overrides`                   -> `OverrideDisposition` (200; reason mandatory)
 - `PUT  /disposition-policies/{version}`               -> `DeclareDispositionPolicy` (201)
 - `GET  /disposition-policies/current`                 -> `GetDispositionPolicy`
 - `GET  /healthz`, `GET /readyz` (drain gate + Postgres ping + Kafka metadata), `GET /metrics`

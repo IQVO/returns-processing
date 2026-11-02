@@ -107,7 +107,7 @@ sequenceDiagram
     participant PG as Postgres
     participant IS as inventory-storage
 
-    O->>UC: POST /receipts/{id}/lines/{n}/inspect {grade, quantity, reasonCodes}
+    O->>UC: POST /receipts/{id}/lines/{n}/inspections {grade, quantity, reasonCodes}
     UC->>R: load receipt, Inspect(line) - once, qty within received
     UC->>UC: classification from the product_classes copy
     UC->>D: DecideForLine(grade, classification, current policy)
@@ -130,7 +130,7 @@ sequenceDiagram
     participant D as Disposition
     participant PG as Postgres
 
-    O->>UC: POST /dispositions/{id}/override {outcome, reason}
+    O->>UC: POST /dispositions/{id}/overrides {outcome, reason}
     UC->>D: load the original
     UC->>D: Override(new id, outcome, reason)
     D-->>UC: a NEW Disposition: supersedes + reason, original's policy_version

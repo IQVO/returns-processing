@@ -55,7 +55,7 @@ All errors are RFC 7807 with
 | `malformed-request-body` | not strict JSON, unknown field, or a NUL byte — send exactly the documented fields |
 | `invalid-quantity` / `invalid-line` / `invalid-grade` / `invalid-policy` | value out of range or not in the enum |
 | `idempotency-key-required` | every write (4 POSTs + the policy PUT) needs an `Idempotency-Key` header |
-| `idempotency-key-reused` | the same key was sent with a DIFFERENT body — one key per logical request |
+| `idempotency-key-reused` (`409`) | the same key was sent with a DIFFERENT method, path or body — one key per logical request |
 | `rma-not-found` / `receipt-not-found` / `disposition-not-found` / `policy-not-found` | unknown id (or no policy declared yet) |
 | `return-not-authorizable` | rejection code in the body: `LINE_NOT_MANIFESTED`, `RETURN_WINDOW_EXPIRED`, `OPEN_RMA_EXISTS`, `QUANTITY_EXCEEDS_POLICY` |
 | `open-rma-exists` | one open RMA per (order, line); the existing one must close first |

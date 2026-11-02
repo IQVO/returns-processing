@@ -23,14 +23,20 @@ func (uc *GetReturn) Execute(ctx context.Context, id string) (views.ReturnView, 
 	return ReturnView(r), nil
 }
 
-// ListReturnsByOrder serves every RMA of one order, by line number then id.
+// ListReturnsByOrder serves the RMAs of one order, by line number then id: one
+// keyset page at a time (Page, behind GET /returns) or all of them (Execute,
+// behind the MCP tool and the A2A skill, which return complete data).
 type ListReturnsByOrder struct {
 	RMAs ports.ReturnAuthorizationRepo
 }
 
-// Execute returns the order's return views.
-func (uc *ListReturnsByOrder) Execute(ctx context.Context, orderID string) ([]views.ReturnView, error) {
-	list, err := uc.RMAs.ListByOrder(ctx, orderID)
+// walkPageSize is how many rows Execute asks the repository for per round trip.
+const walkPageSize = 500
+
+// Page returns at most limit return views strictly after the keyset position
+// after (the first page when nil).
+func (uc *ListReturnsByOrder) Page(ctx context.Context, orderID string, after *views.ReturnKey, limit int) ([]views.ReturnView, error) {
+	list, err := uc.RMAs.ListByOrder(ctx, orderID, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +45,24 @@ func (uc *ListReturnsByOrder) Execute(ctx context.Context, orderID string) ([]vi
 		out = append(out, ReturnView(r))
 	}
 	return out, nil
+}
+
+// Execute returns every return view of the order, walking the pages.
+func (uc *ListReturnsByOrder) Execute(ctx context.Context, orderID string) ([]views.ReturnView, error) {
+	out := []views.ReturnView{}
+	var after *views.ReturnKey
+	for {
+		page, err := uc.Page(ctx, orderID, after, walkPageSize)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if len(page) < walkPageSize {
+			return out, nil
+		}
+		last := page[len(page)-1]
+		after = &views.ReturnKey{LineNo: last.LineNo, ID: last.ID}
+	}
 }
 
 // GetDispositionPolicy serves the policy table: the CURRENT version, or any

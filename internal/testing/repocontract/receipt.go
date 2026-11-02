@@ -34,7 +34,7 @@ func receiptRoundTrip(t *testing.T, r ports.ReturnReceiptRepo) {
 	must(t, r.Save(bg, in))
 	got, err := r.FindByID(bg, "rc-1")
 	must(t, err)
-	if got.Version() != 1 || got.RMAID() != "rma-1" || got.SiteID() != "SITE1" {
+	if got.Version() != 1 || got.RMAID() != fixtureRMA || got.SiteID() != fixtureSite {
 		t.Fatalf("root facts lost: %+v", got.Snapshot())
 	}
 	if !reflect.DeepEqual(got.Snapshot(), in.Snapshot()) {
