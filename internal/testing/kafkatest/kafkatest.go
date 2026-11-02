@@ -22,7 +22,7 @@ var (
 	once      sync.Once
 	container *tckafka.KafkaContainer
 	brokers   []string
-	startErr  error
+	errStart  error
 	seq       atomic.Int64
 )
 
@@ -36,16 +36,16 @@ func Brokers(t *testing.T) []string {
 	t.Helper()
 	once.Do(func() {
 		ctx := context.Background()
-		container, startErr = tckafka.Run(ctx, "confluentinc/confluent-local:7.6.1",
+		container, errStart = tckafka.Run(ctx, "confluentinc/confluent-local:7.6.1",
 			tckafka.WithClusterID("returns-processing-itest"),
 			testcontainers.WithEnv(map[string]string{"KAFKA_AUTO_CREATE_TOPICS_ENABLE": "false"}))
-		if startErr != nil {
+		if errStart != nil {
 			return
 		}
-		brokers, startErr = container.Brokers(ctx)
+		brokers, errStart = container.Brokers(ctx)
 	})
-	if startErr != nil {
-		t.Fatalf("start kafka container: %v", startErr)
+	if errStart != nil {
+		t.Fatalf("start kafka container: %v", errStart)
 	}
 	return brokers
 }
