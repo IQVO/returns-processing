@@ -1,1 +1,1 @@
-{"responses":{"200":{"description":"Alive.","content":{"application/json":{"schema":{"type":"object","required":["status"],"properties":{"status":{"type":"string","example":"ok"}},"title":"Status"}}}}}}
+{"responses":{"200":{"description":"Alive.","content":{"application/json":{"schema":{"type":"object","required":["status"],"properties":{"status":{"type":"string","description":"`ok` (healthz), `ready` or `not_ready` (readyz).","example":"ok"}},"title":"Status"}}}}}}
