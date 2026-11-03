@@ -341,7 +341,13 @@ runs the OLTP migrations on start (idempotent), and serves MCP over
 Streamable HTTP at `/` and `/mcp` with `GET /healthz` behind the probes. Its
 surface is **read-only**: three tools — `get_return`,
 `list_returns_by_order`, `get_disposition_policy` — over the same read use
-cases as REST. There is no authentication layer in front of it; access
+cases as REST. Every tool and both A2A skills declare authority `L1` (`_meta`
+`com.warehouse/authority` / tag `authority:L1`, Agentic Standard v2), the
+transport is stateless (2026-07-28 `server/discover` plus legacy
+`initialize`), and the surface carries one resource
+(`warehouse://returns-processing/returns/{rmaId}`) and one prompt
+(`triage_return`) — [ADR 0010](docs/adr/0010-agent-authority-levels-and-complete-mcp-surface.md).
+There is no authentication layer in front of it; access
 control is the in-cluster ClusterIP boundary.
 
 ### Running the A2A agent in Kubernetes
@@ -358,6 +364,9 @@ called as a `SendMessage` data part `{"skill": "<id>", "arguments": {...}}`:
   return stands.
 - `disposition_policy` (read): `{}` for the current policy or `{version}`
   for a declared one.
+
+Both declare `authority:L1` on the card (Agentic Standard v2,
+[ADR 0010](docs/adr/0010-agent-authority-levels-and-complete-mcp-surface.md)).
 
 Rejections come back in-band as RFC 7807 `problem`s (404/400/500, REST's
 slugs). `a2a.enabled=true` (default `false`) renders `<release>-a2a`
