@@ -177,11 +177,14 @@ func (d Deps) getDispositionPolicy(ctx context.Context, in getDispositionPolicyI
 const maxIDLen = 64
 
 // registerTools adds the three read-only tools. Every tool is annotated
-// read-only, idempotent and closed-world; TestToolSurface pins the set and
-// fails the build on any write-verb name.
+// read-only, idempotent and closed-world, and declares its authority level
+// (Agentic Standard v2, AS-1: a pure read of this context's own state is L1).
+// The annotations literal is inlined per tool so the fleet's static sensor
+// (internal/architecture/mcp_authority_fitness_test.go) can prove the
+// ReadOnlyHint. TestToolSurface pins the set and fails the build on any
+// write-verb tool name.
 func (d Deps) registerTools(server *mcp.Server) {
 	closedWorld := false
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld}
 
 	addTool(server, &mcp.Tool{
 		Name: "get_return",
@@ -190,7 +193,8 @@ func (d Deps) registerTools(server *mcp.Server) {
 			"and site, the reason code, the status (REQUESTED, AUTHORIZED, REJECTED, RECEIVED or CLOSED), the " +
 			"rejection code on a refused return, the instant the return window ends and the aggregate version. " +
 			"Read-only; fails with rma-not-found for an unknown id and invalid-rma-id for a malformed one.",
-		Annotations: readOnly,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
+		Meta:        authorityMeta(authorityL1),
 	}, d.getReturn)
 
 	addTool(server, &mcp.Tool{
@@ -198,7 +202,8 @@ func (d Deps) registerTools(server *mcp.Server) {
 		Description: "List every return authorization (RMA) of one original order, ordered by line number then id. " +
 			"An order with no returns -- or an unknown order -- answers an empty list, never an error. Each item " +
 			"carries the same shape as get_return. Read-only; fails with invalid-order-id for a malformed order id.",
-		Annotations: readOnly,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
+		Meta:        authorityMeta(authorityL1),
 	}, d.listReturnsByOrder)
 
 	addTool(server, &mcp.Tool{
@@ -210,7 +215,8 @@ func (d Deps) registerTools(server *mcp.Server) {
 			"reads the CURRENT version; passing a version number reads that declared one (the policy is append-only: " +
 			"a change is a new version, never a rewrite). Read-only; fails with policy-not-found when the version " +
 			"does not exist.",
-		Annotations: readOnly,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
+		Meta:        authorityMeta(authorityL1),
 	}, d.getDispositionPolicy)
 }
 
