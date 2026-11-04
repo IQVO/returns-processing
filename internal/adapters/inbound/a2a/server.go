@@ -91,7 +91,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				ID:          skillReturnStatus,
 				Name:        "Where does a return stand",
 				Description: "Read the state of returns, addressed by EXACTLY ONE of rmaId (one return authorization) or orderId (every RMA of one original order, ordered by line number then id; an order with no returns, or an unknown one, answers an empty list). Each return carries its orderId and lineNo, the work unit it shipped in, sku, quantity, site, reasonCode, status, the rejectionCode of a refused return, the instant the return window ends and the aggregate version. Answers a 404 problem for an unknown rmaId. Persists nothing.",
-				Tags:        []string{"returns", "rma", "read"},
+				Tags:        []string{"returns", "rma", "read", "authority:L1"},
 				InputModes:  []string{contentTypeJSON},
 				Examples: []string{
 					`{"skill":"return_status","arguments":{"rmaId":"rma-1b4e28ba"}}`,
@@ -102,7 +102,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				ID:          skillDispositionPolicy,
 				Name:        "Read the disposition policy",
 				Description: "Read the disposition policy table: version, returnWindowDays, maxUnitsPerLine, the vetoOutcome a guardrail demotes to, declaredAt and the rules mapping each inspection grade (A, B, C, SCRAP) and product class to an outcome (RESTOCK, REFURBISH, LIQUIDATE, DISPOSE, RTV; \"*\" is a rule's default product class). Omitting version reads the CURRENT policy; a positive version reads that declared one (the policy is append-only). Answers a 404 problem when no such version exists. Persists nothing.",
-				Tags:        []string{"returns", "disposition", "policy", "read"},
+				Tags:        []string{"returns", "disposition", "policy", "read", "authority:L1"},
 				InputModes:  []string{contentTypeJSON},
 				Examples: []string{
 					`{"skill":"disposition_policy","arguments":{}}`,
