@@ -38,17 +38,20 @@ three regulation categories: **maintainability**, **architecture fitness**,
 | `coverage` (90% gate) | maintainability | computational | pre-push, PR | yes | minutes |
 | `bdd` (godog/Gherkin) | behaviour | computational | pre-push, PR | yes | seconds |
 | `arch-test` (arch-go fitness) | architecture fitness | computational | pre-push, PR | yes | seconds |
+| `complexity` (golangci-lint gocyclo/cyclop/gocognit/nestif/funlen) | maintainability | computational | PR | yes | seconds |
+| `file-length` (Go files the PR adds or touches) | maintainability | computational | PR into develop | yes (backlog informational) | seconds |
+| `chart-tests` (chart wiring tests, hash-pinned PyYAML) | maintainability | computational | PR | yes | seconds |
+| `guide-lint` (guide_lint.py + hook/red-issue unit tests) | maintainability | computational | PR | no (job is continue-on-error) | seconds |
 | `integration` (testcontainers) | behaviour | computational | PR | yes | minutes |
-| `mutation-fast` (gremlins, one aggregate) | maintainability | computational | PR | yes | ~1 min |
+| `mutation-fast` (gremlins, each domain package) | maintainability | computational | PR | yes | ~1 min |
 | `mutation` (gremlins, full domain) | maintainability | computational | weekly schedule | no (advisory report) | tens of minutes |
 | `vuln` (govulncheck) | maintainability | computational | PR | yes | seconds |
 | `api-lint` (Spectral) | maintainability | computational | PR | yes | seconds |
 | `docs-api-drift` | maintainability | computational | PR | yes | seconds |
 | `web` (vitest/tsc/eslint) | maintainability | computational | PR | yes | minutes |
-| `helm-lint` | maintainability | computational | PR (targeting main) | yes | seconds |
-| `trivy-scan` | maintainability | computational | PR (targeting main) | yes (CRITICAL/HIGH w/ fix) | minutes |
+| `helm-lint` (chart-testing lint + chart wiring tests) | maintainability | computational | PR | yes | seconds |
+| `trivy-scan` | maintainability | computational | PR | yes (CRITICAL/HIGH w/ fix) | minutes |
 | `CodeQL` | maintainability | computational | PR, schedule | yes (conversation-resolution) | minutes |
-| `Scorecard` | maintainability | computational | schedule | no | minutes |
 | `drift` (deadcode, `go mod tidy -diff`, knip, coverage-quality) | maintainability | computational | weekly schedule | **no — advisory** | minutes |
 | `/code-review`, `/architecture-review`, `/domain-review` | architecture fitness / behaviour | **inferential** | invoked by hand (local-only, per user decision 2026-09-13) | no | LLM cost per invocation |
 
