@@ -11,11 +11,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/cucumber/godog"
 
+	inboundhttp "github.com/claudioed/returns-processing/internal/adapters/inbound/http"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/analyticsstore"
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/memory"
 	"github.com/claudioed/returns-processing/internal/application/usecases"
 	"github.com/claudioed/returns-processing/internal/application/views"
@@ -71,9 +75,30 @@ type world struct {
 	rmaID     string
 	receiptID string
 
+	// Wave 2: the REST edge (the real chi router over the same use cases),
+	// the reports read side (the real reports router over the in-memory
+	// analytical store) and the Kafka-fact consumers (the use cases the
+	// inbound Kafka adapters call).
+	httpSrv    *httptest.Server
+	reportsSrv *httptest.Server
+	analytics  *analyticsstore.Memory
+	idem       *memory.IdempotencyStore
+	consumers  consumerSet
+	lastStatus int
+	lastHeader http.Header
+	lastBody   []byte
+	consumeOut usecases.ConsumeOutcome
+
 	lastErr    error
 	errChecked bool
 	unchecked  []error
+}
+
+// consumerSet is the consume use cases of one scenario (ADR 0003 facts).
+type consumerSet struct {
+	allocations    *usecases.ApplyAllocations
+	manifest       *usecases.ApplyManifest
+	classification *usecases.ApplyProductClassification
 }
 
 // start builds the application over fresh in-memory doubles, as cmd/api
@@ -101,6 +126,37 @@ func (w *world) start() {
 	}
 	w.ctx = context.Background()
 	w.rmaID, w.receiptID = "", ""
+
+	// Wave 2 wiring: the REST edge the way cmd/api builds it (the real
+	// router, the Idempotency-Key middleware over the memory store), the
+	// reports router the way cmd/returns-reports builds it, and the
+	// consume use cases the inbound Kafka adapters call.
+	w.idem = memory.NewIdempotencyStore()
+	uow := memory.NewUnitOfWork()
+	w.consumers = consumerSet{
+		allocations:    &usecases.ApplyAllocations{UnitOfWork: uow, Processed: memory.NewProcessedEvents(), Lines: alloc},
+		manifest:       &usecases.ApplyManifest{UnitOfWork: uow, Processed: memory.NewProcessedEvents(), Units: manif},
+		classification: &usecases.ApplyProductClassification{UnitOfWork: uow, Processed: memory.NewProcessedEvents(), Classes: prods},
+	}
+	mw := inboundhttp.NewIdempotency(w.idem, uow, clock)
+	w.httpSrv = httptest.NewServer(inboundhttp.NewRouter(&inboundhttp.Server{
+		AuthorizeReturn:          w.uc.authorize,
+		GetReturn:                w.uc.getReturn,
+		ListByOrder:              w.uc.list,
+		OpenReturnReceipt:        w.uc.open,
+		InspectReturnLine:        w.uc.inspect,
+		OverrideDisposition:      w.uc.override,
+		DeclareDispositionPolicy: w.uc.declare,
+		GetDispositionPolicy:     w.uc.policy,
+		Idempotency:              mw.Middleware,
+	}))
+	w.analytics = analyticsstore.NewMemory()
+	w.reportsSrv = httptest.NewServer(inboundhttp.NewReportsRouter(&inboundhttp.ReportsServer{
+		Reader: w.analytics,
+		Now:    clock.Now,
+	}))
+	w.lastStatus, w.lastHeader, w.lastBody, w.consumeOut = 0, nil, nil, ""
+
 	w.lastErr, w.errChecked, w.unchecked = nil, false, nil
 }
 
@@ -170,6 +226,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		return ctx, nil
 	})
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		w.httpSrv.Close()
+		w.reportsSrv.Close()
 		if err != nil {
 			return ctx, err
 		}
@@ -180,4 +238,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerReceiptSteps(sc, w)
 	registerDispositionSteps(sc, w)
 	registerCommandErrorSteps(sc, w)
+	registerWave2Steps(sc, w)
 }
