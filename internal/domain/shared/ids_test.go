@@ -126,3 +126,22 @@ func TestIsSpaceIsECMA262(t *testing.T) {
 		t.Fatal("sanity")
 	}
 }
+
+// Kind names the id kind in validation errors, so every constructor must
+// keep its own.
+func TestIDKind(t *testing.T) {
+	cases := []struct {
+		name string
+		id   ID
+		want string
+	}{
+		{"rma", func() ID { id, _ := NewRMAID("rma-1"); return id }(), "rma id"},
+		{"receipt", func() ID { id, _ := NewReceiptID("rcpt-1"); return id }(), "receipt id"},
+		{"disposition", func() ID { id, _ := NewDispositionID("disp-1"); return id }(), "disposition id"},
+	}
+	for _, c := range cases {
+		if got := c.id.Kind(); got != c.want {
+			t.Errorf("%s: Kind() = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
