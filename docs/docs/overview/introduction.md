@@ -67,10 +67,10 @@ product-master publishes `ProductClassified`, order-management publishes `OrderA
 `OrderPartiallyAllocated`, fulfillment-execution publishes `PackageManifested` — and both downstream
 edges are built: inventory-storage consumes `ReturnLineStaged` into its staged-receipt use case (its
 ADR 0044) and exception-management consumes `UnexpectedReturnReceived` to open a problem-solve case.
-Two producer-side gaps are recorded as roadmap, never faked: order-management's allocated lines carry
+Two gaps are recorded as roadmap, never faked: order-management's allocated lines carry
 no `quantity`, so the authorized quantity is capped by policy only; and inventory-storage's
-`ItemStowed` is not on its integration topic yet, so a staged line's stow is invisible here
-([ADR 0003](/docs/adr/0003-local-copies-and-consumed-contracts)).
+`ItemStowed` is on its integration topic (its ADR 0043) but this service does not consume it yet, so a
+staged line's stow is invisible here ([ADR 0003](/docs/adr/0003-local-copies-and-consumed-contracts)).
 The service is packaged (Helm chart with an api component and a default-off read-only mcp component)
 but not yet registered in `warehouse-infra` and has cut no release
 ([Runbook](/docs/operations/runbook#deployment-status)).

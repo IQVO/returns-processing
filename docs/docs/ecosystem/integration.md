@@ -190,7 +190,8 @@ checked here.
 ## Absent edges
 
 - No REST, MCP or A2A call from this context to any sibling, ever.
-- No consumer of `ItemStowed` from inventory-storage: the restock loop is deliberately left open
+- No consumer of `ItemStowed` from inventory-storage: it is on inventory-storage's integration topic
+  (its ADR 0043) but nothing here reads it, so the restock loop stays open
   ([ADR 0001](/docs/adr/0001-returns-processing-bounded-context)).
 - No `quantity` on the consumed allocated lines, so no shipped-quantity check per line.
 - No consumer of the integration topic other than inventory-storage and exception-management that

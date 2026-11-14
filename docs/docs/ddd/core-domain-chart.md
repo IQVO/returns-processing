@@ -54,14 +54,14 @@ flowchart LR
 ## What flips it to core
 
 ADR 0001 declares no such condition and none is claimed here. The two
-roadmap items are additive producer changes that complete the current
-shape, not reclassify it:
+roadmap items complete the current shape, not reclassify it:
 
-1. order-management adding `quantity` to its released lines, which turns
-   the shipped-quantity check from policy cap into a real check (ADR 0003);
-2. inventory-storage promoting `ItemStowed` to its integration topic,
-   which closes the restock loop this context deliberately leaves open
-   (ADR 0001/0003).
+1. order-management adding `quantity` to its released lines (an additive
+   producer change), which turns the shipped-quantity check from policy cap
+   into a real check (ADR 0003);
+2. this service consuming `ItemStowed`, which inventory-storage already
+   publishes on its integration topic (its ADR 0043); that closes the
+   restock loop this context leaves open (ADR 0001/0003).
 
 Until then: invest for supporting — simple, fixed, well-tested; do not
 gold-plate.
