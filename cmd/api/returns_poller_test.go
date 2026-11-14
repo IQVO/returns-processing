@@ -92,7 +92,7 @@ func runPollerTicks(t *testing.T, p *returnsPoller) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 	cancel()
 	select {
 	case <-done:
