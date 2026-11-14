@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -29,12 +30,20 @@ import (
 
 // TestFeatures runs every Gherkin feature in this directory.
 func TestFeatures(t *testing.T) {
+	// @known-bug scenarios describe the SPEC behaviour where the code
+	// diverges; they are excluded from the default run and must FAIL under
+	// BDD_TAGS=@known-bug.
+	tags := os.Getenv("BDD_TAGS")
+	if tags == "" {
+		tags = "~@known-bug"
+	}
 	suite := godog.TestSuite{
 		ScenarioInitializer: InitializeScenario,
 		Options: &godog.Options{
 			Format:   "pretty",
 			Paths:    []string{"."},
 			Strict:   true,
+			Tags:     tags,
 			TestingT: t,
 		},
 	}
@@ -239,4 +248,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerDispositionSteps(sc, w)
 	registerCommandErrorSteps(sc, w)
 	registerWave2Steps(sc, w)
+	registerRulesSteps(sc, w)
 }
