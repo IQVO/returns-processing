@@ -37,6 +37,10 @@ type adapters struct {
 	lineFeed  ports.AllocatedLineFeed
 	unitFeed  ports.ManifestedUnitFeed
 	processed ports.ProcessedEvents
+	// advices is the network return-advice view (ADR 0012): the poller's
+	// store, the completion hook's read. Wired always — without the poller
+	// flag it simply stays empty and the hook stays silent.
+	advices *postgres.ReturnAdvices
 	// idempotency is the Idempotency-Key middleware of the writes.
 	idempotency func(http.Handler) http.Handler
 	// ping is the Postgres liveness check behind /readyz.
@@ -55,6 +59,7 @@ func buildAdapters(pool *pgxpool.Pool) adapters {
 	classes := postgres.NewProductClasses(pool)
 	ad := adapters{
 		rmas:       postgres.NewRMAs(pool),
+		advices:    postgres.NewReturnAdvices(pool),
 		receipts:   postgres.NewReceipts(pool),
 		dispos:     postgres.NewDispositions(pool),
 		policies:   postgres.NewPolicies(pool),
@@ -93,6 +98,7 @@ func buildServer(a adapters, readiness *inboundhttp.Readiness, logger *slog.Logg
 		InspectReturnLine: &usecases.InspectReturnLine{
 			Receipts: a.receipts, Dispositions: a.dispos, Policies: a.policies, Products: a.classes,
 			Events: a.events, IDs: a.ids, Clock: a.clock, UnitOfWork: a.uow,
+			Advices: a.advices, AdviceFeed: a.advices,
 		},
 		OverrideDisposition: &usecases.OverrideDisposition{
 			Dispositions: a.dispos, Events: a.events, IDs: a.ids, Clock: a.clock, UnitOfWork: a.uow,

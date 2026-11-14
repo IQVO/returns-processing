@@ -108,6 +108,16 @@ config:
   # SHUTDOWN_DRAIN_DELAY: wait after /readyz flips before closing the
   # listener. Empty = not rendered; the binary defaults to 5s.
   shutdownDrainDelay: ""
+  # The network return-advices poller (ADR 0012) — the service's first
+  # vendor-connectivity integration. Disabled by default (fail-closed: no
+  # variable is rendered, no call is possible); the study cluster sets
+  # enabled: true. baseUrl and vendorId are required when enabled; the
+  # binary fails at boot naming them if the chart is forced around this.
+  networkReturns:
+    enabled: false            # NETWORK_RETURNS_POLLER_ENABLED
+    baseUrl: ""               # NETWORK_RETURNS_BASE_URL (required when enabled)
+    vendorId: ""              # NETWORK_RETURNS_VENDOR_ID (required when enabled)
+    pollInterval: ""          # NETWORK_RETURNS_POLL_INTERVAL (Go duration or seconds; empty = 30s)
   # The STABLE consumer group ids of the three local-copy consumers
   # (MANDATORY: the binary exits at boot without them, and the chart refuses
   # to render with an empty one). They are fixed names, not derived from the

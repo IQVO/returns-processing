@@ -25,3 +25,4 @@ section.
 | [0009](/docs/adr/0009-adopt-the-fleet-rest-api-guideline) | adopt the fleet REST API guideline — noun routes, idempotent POSTs with a 409 on key reuse, keyset paging | Accepted (2026-11-01); superseded in part by ADR 0011 |
 | [0010](/docs/adr/0010-agent-authority-levels-and-complete-mcp-surface) | agent authority levels and complete MCP surface — Agentic Standard v2 on the read-only MCP and A2A surfaces | Accepted (2026-11-02) |
 | [0011](/docs/adr/0011-adopt-the-fleet-observability-standard) | adopt the fleet observability standard — OTLP traces and metrics, trace-correlated logs, one business counter | Accepted (2026-11-14) |
+| [0012](/docs/adr/0012-network-return-advices-poller) | the network return-advices poller — the first vendor-connectivity seam, the advice view, receipts keyed by authorizationId, outcome submission | Accepted (2026-11-14) |

@@ -419,3 +419,20 @@ if grep -q 'origins:\s*$' <<<"$plugins" && grep -A1 'origins:' <<<"$plugins" | g
 fi
 
 echo "PASS: returns-processing chart render assertions"
+
+# --- the network return-advices poller (ADR 0012) -------------------------------
+# Disabled (the default), none of its variables are rendered: the binary's
+# fail-closed flag keeps every existing deployment byte-identical.
+for var in NETWORK_RETURNS_POLLER_ENABLED NETWORK_RETURNS_BASE_URL NETWORK_RETURNS_VENDOR_ID NETWORK_RETURNS_POLL_INTERVAL; do
+  if grep -q "$var" <<<"$configmap"; then fail "$var must not be rendered while the poller is disabled"; fi
+done
+# Enabled, the base URL and the vendor are mandatory at render time too (the
+# binary would refuse to boot without them).
+expect_refusal "poller enabled without a base URL" "config.networkReturns.baseUrl" "${base[@]}" \
+  --set config.networkReturns.enabled=true --set config.networkReturns.vendorId=V-WS
+expect_refusal "poller enabled without a vendor id" "config.networkReturns.vendorId" "${base[@]}" \
+  --set config.networkReturns.enabled=true --set config.networkReturns.baseUrl=http://network
+poller_cm="$(render_only configmap.yaml "${everything[@]}")"
+for kv in 'NETWORK_RETURNS_POLLER_ENABLED: "true"' 'NETWORK_RETURNS_POLL_INTERVAL: "45s"'; do
+  grep -q "$kv" <<<"$poller_cm" || fail "the ConfigMap does not render $kv"
+done

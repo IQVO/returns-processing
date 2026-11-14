@@ -27,3 +27,16 @@ data:
   {{- with .Values.config.shutdownDrainDelay }}
   SHUTDOWN_DRAIN_DELAY: {{ . | quote }}
   {{- end }}
+  {{- with .Values.config.networkReturns }}
+  {{- if .enabled }}
+  # The network return-advices poller (ADR 0012): off by default; the study
+  # cluster enables it. Enabled, the base URL and the vendor are mandatory at
+  # render time — the binary would refuse to boot without them.
+  NETWORK_RETURNS_POLLER_ENABLED: {{ .enabled | quote }}
+  NETWORK_RETURNS_BASE_URL: {{ required "returns-processing requires config.networkReturns.baseUrl when the return-advices poller is enabled (NETWORK_RETURNS_BASE_URL, ADR 0012)." .baseUrl | quote }}
+  NETWORK_RETURNS_VENDOR_ID: {{ required "returns-processing requires config.networkReturns.vendorId when the return-advices poller is enabled (NETWORK_RETURNS_VENDOR_ID, ADR 0012)." .vendorId | quote }}
+  {{- with .pollInterval }}
+  NETWORK_RETURNS_POLL_INTERVAL: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}

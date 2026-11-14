@@ -80,6 +80,22 @@ spec:
             - name: SHUTDOWN_DRAIN_DELAY
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.config.networkReturns }}
+            {{- if .enabled }}
+            # The network return-advices poller (ADR 0012): rendered only when
+            # enabled; the same required guards as the ConfigMap apply.
+            - name: NETWORK_RETURNS_POLLER_ENABLED
+              value: {{ .enabled | quote }}
+            - name: NETWORK_RETURNS_BASE_URL
+              value: {{ required "returns-processing requires config.networkReturns.baseUrl when the return-advices poller is enabled (NETWORK_RETURNS_BASE_URL, ADR 0012)." .baseUrl | quote }}
+            - name: NETWORK_RETURNS_VENDOR_ID
+              value: {{ required "returns-processing requires config.networkReturns.vendorId when the return-advices poller is enabled (NETWORK_RETURNS_VENDOR_ID, ADR 0012)." .vendorId | quote }}
+            {{- with .pollInterval }}
+            - name: NETWORK_RETURNS_POLL_INTERVAL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             # ADR 0003 local copies. The three consumer group ids are
             # mandatory and come from values, never a literal: a stable id is
             # what makes a rescheduled pod resume from its committed offsets.
