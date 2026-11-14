@@ -10,6 +10,11 @@ config:
   outboxRelayInterval: "500ms"
   outboxMaxAttempts: 20
   shutdownDrainDelay: "5s"
+  networkReturns:
+    enabled: true
+    baseUrl: "http://vendor-api.retail-network.svc.cluster.local"
+    vendorId: "V-WS"
+    pollInterval: "45s"
   productClassificationConsumerGroup: "returns-processing-product-classification"
   orderLinesConsumerGroup: "returns-processing-order-lines"
   manifestConsumerGroup: "returns-processing-manifest"

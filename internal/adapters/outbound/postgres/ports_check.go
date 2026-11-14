@@ -18,4 +18,6 @@ var (
 	_ ports.IDGen                   = (*IDGen)(nil)
 	_ ports.Clock                   = (*Clock)(nil)
 	_ ports.IdempotencyStore        = (*IdempotencyStore)(nil)
+	_ ports.ReturnAdviceFeed        = (*ReturnAdvices)(nil)
+	_ ports.ReturnAdviceViews       = (*ReturnAdvices)(nil)
 )
