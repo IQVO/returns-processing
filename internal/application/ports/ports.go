@@ -225,3 +225,17 @@ type IdempotencyStore interface {
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(ctx context.Context) error) error
 }
+
+// AuthorizationMetrics counts the decisions of the AuthorizeReturn use case,
+// the aggregate's primary command (the Tier 2 business metric of ADR 0011).
+// It is a driven port: the use case reports an outcome and never knows
+// what records it. A use case tolerates a NIL AuthorizationMetrics (nothing
+// is counted).
+type AuthorizationMetrics interface {
+	// ReturnAuthorized counts a return that was authorized and saved.
+	ReturnAuthorized(ctx context.Context)
+	// ReturnRejected counts an authorization that stored nothing, with the
+	// problem slug of the refusal as reason (the slug the REST adapter
+	// answers with, e.g. return-not-authorizable or open-rma-exists).
+	ReturnRejected(ctx context.Context, reason string)
+}
