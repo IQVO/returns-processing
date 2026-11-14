@@ -165,8 +165,8 @@ metrics, trace-correlated logs, the `returns.authorizations.decided` counter) ar
 
 - Shipped-quantity check per line — waits on order-management adding `quantity` to its released
   line (additive producer change, asked separately; roadmap).
-- Restock loop closure — waits on inventory-storage promoting `ItemStowed` to its integration
-  topic; until then a staged line's stow is invisible here (roadmap).
-- Analytics mirror + read side — its own later decision (ADR 0004 records it as planned).
+- Restock loop closure — inventory-storage already publishes `ItemStowed` on its integration topic
+  (its ADR 0043); this service has no consumer for it yet, so a staged line's stow is invisible
+  here (roadmap).
 - Trace context across Kafka: not propagated (the `outbox` table has no `headers` column; adding one
   is a migration, deferred by ADR 0011). `GET /metrics` stays undeclared: metrics are pushed over OTLP.
