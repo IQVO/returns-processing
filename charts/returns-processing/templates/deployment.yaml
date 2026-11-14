@@ -3,6 +3,7 @@
 {{- include "returns-processing.requireConsumerGroups" . -}}
 {{- include "returns-processing.requireGracePeriod" . -}}
 {{- include "returns-processing.requireNoModeEnv" . -}}
+{{- include "returns-processing.requireNoOwnedEnv" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -108,6 +109,10 @@ spec:
             {{- end }}
             - name: KAFKA_BROKERS
               value: {{ .Values.kafka.brokers | quote }}
+            # OpenTelemetry (ADR 0011): SERVICE_VERSION and ENVIRONMENT always; the
+            # OTEL_* pair only while otel.enabled (the binary then falls back to
+            # localhost:4317). Chart-owned: extraEnv may not set them.
+            {{- include "returns-processing.otelEnv" (dict "root" . "suffix" "") | nindent 12 }}
             {{- range .Values.extraEnv }}
             - {{ toYaml . | nindent 14 | trim }}
             {{- end }}

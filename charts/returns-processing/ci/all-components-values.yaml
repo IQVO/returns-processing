@@ -13,6 +13,12 @@ config:
   productClassificationConsumerGroup: "returns-processing-product-classification"
   orderLinesConsumerGroup: "returns-processing-order-lines"
   manifestConsumerGroup: "returns-processing-manifest"
+# OpenTelemetry on for every component (ADR 0011), the defaults spelled out.
+otel:
+  enabled: true
+  endpoint: "otel-collector.observability.svc.cluster.local:4317"
+  serviceName: "returns-processing"
+environment: "production"
 mcp:
   enabled: true
   route:
