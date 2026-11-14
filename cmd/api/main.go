@@ -30,6 +30,10 @@
 //	HTTP_ADDR                           listen address (default :8080)
 //	SHUTDOWN_DRAIN_DELAY                wait after flipping /readyz before closing (default 5s, 0 = none)
 //	LOG_LEVEL                           debug | info | warn | error (default info)
+//	OTEL_SERVICE_NAME                   service.name of spans and metrics (default returns-processing)
+//	OTEL_EXPORTER_OTLP_ENDPOINT         Collector OTLP/gRPC endpoint (default localhost:4317)
+//	SERVICE_VERSION                     service.version (default dev)
+//	ENVIRONMENT                         deployment.environment.name (default local)
 //
 // A consumer that dies is a process death: serveUntilSignal shuts the service
 // down and run returns the consumer's error, so main exits non-zero and the
@@ -55,6 +59,7 @@ import (
 	inboundhttp "github.com/claudioed/returns-processing/internal/adapters/inbound/http"
 	outboundkafka "github.com/claudioed/returns-processing/internal/adapters/outbound/kafka"
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/postgres"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/telemetry"
 )
 
 // shutdownTimeout bounds the HTTP server's graceful drain.
@@ -82,6 +87,16 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Telemetry comes up before the router and the counter are built: both
+	// bind the global MeterProvider on construction. Its flush is deferred
+	// first so it runs last, after everything that records has stopped.
+	telCfg := loadTelemetryEnv(os.Getenv)
+	flushTelemetry, err := startTelemetry(logger, telCfg)
+	if err != nil {
+		return err
+	}
+	defer flushTelemetry()
 
 	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
 	if err != nil {
@@ -116,11 +131,15 @@ func run(ctx context.Context) error {
 	)
 
 	ad := buildAdapters(pool)
+	ad.authMetrics, err = telemetry.NewAuthorizationMetrics()
+	if err != nil {
+		return err
+	}
 	consumers := startConsumers(ad, cfg.brokers, cfg.groups, logger)
 	readiness := buildReadiness(ad, outboundkafka.NewBrokerCheck(cfg.brokers).Check)
 	httpServer := &http.Server{
 		Addr:              cfg.httpAddr,
-		Handler:           inboundhttp.NewRouter(buildServer(ad, readiness)),
+		Handler:           inboundhttp.NewRouter(buildServer(ad, readiness, logger, telCfg.serviceName)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

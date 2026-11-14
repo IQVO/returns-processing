@@ -29,7 +29,7 @@ sidebar_position: 1
 | Health | `GET /healthz` | liveness | `200` |
 | Health | `GET /readyz` | drain gate + Postgres ping + Kafka metadata | `200` / `503 dependency-unavailable` |
 
-The service exports no runtime metrics, so the spec declares no `/metrics` route (see
+Metrics are pushed over OTLP, not scraped, so the spec declares no `/metrics` route (see
 [Observability](/docs/operations/observability)). The four `GET /reports/*` routes are served by
 the separate `returns-reports` binary (`:8092`) and are bounded by `from`/`to`, so they are
 unpaginated (`x-pagination-exempt`).

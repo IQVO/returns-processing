@@ -7,12 +7,21 @@
 package http
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
+	otelchimetric "github.com/riandyrn/otelchi/metric"
 
+	"github.com/claudioed/returns-processing/internal/adapters/inbound/requestlog"
 	"github.com/claudioed/returns-processing/internal/application/usecases"
 )
+
+// defaultServiceName names the server span and the request-duration histogram
+// when a Server does not carry the service name of its binary.
+const defaultServiceName = "returns-processing"
 
 // Server holds the use cases the handlers call.
 type Server struct {
@@ -34,6 +43,29 @@ type Server struct {
 	Idempotency func(http.Handler) http.Handler
 	// Readiness backs GET /readyz; nil means always ready.
 	Readiness *Readiness
+
+	// Logger writes the request log line (nil = slog.Default()). Hand it the
+	// trace-correlating handler of the composition root so each line carries
+	// the trace_id/span_id of the request's server span.
+	Logger *slog.Logger
+	// ServiceName is the otelchi server-span / request-duration service name
+	// (the binary's OTEL_SERVICE_NAME; empty = returns-processing).
+	ServiceName string
+}
+
+// observe mounts the fleet observability middleware (ADR 0011), in the
+// standard order: RequestID, otelchi (server span named after the route
+// pattern), the request-duration histogram, RequestLogger. telemetry.Setup
+// must have run before the router is built: otelchimetric binds the global
+// MeterProvider at construction.
+func observe(r *chi.Mux, logger *slog.Logger, serviceName string) {
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+	r.Use(middleware.RequestID)
+	r.Use(otelchi.Middleware(serviceName, otelchi.WithChiRoutes(r)))
+	r.Use(otelchimetric.NewServerRequestDuration(otelchimetric.NewBaseConfig(serviceName)))
+	r.Use(requestlog.RequestLogger(logger))
 }
 
 // NewRouter builds the chi router for every endpoint of apis/openapi.yaml
@@ -42,6 +74,7 @@ type Server struct {
 // anything.
 func NewRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
+	observe(r, s.Logger, s.ServiceName)
 	r.Use(recoverPanic)
 	r.Use(rejectNUL)
 

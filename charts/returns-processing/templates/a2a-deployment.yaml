@@ -72,6 +72,10 @@ spec:
                   key: {{ .Values.database.migrationsExistingSecretKey }}
                   optional: true
             {{- end }}
+            # OpenTelemetry (ADR 0011): SERVICE_VERSION and ENVIRONMENT always; the
+            # OTEL_* pair only while otel.enabled (the binary then falls back to
+            # localhost:4317). Chart-owned: extraEnv may not set them.
+            {{- include "returns-processing.otelEnv" (dict "root" . "suffix" "-a2a") | nindent 12 }}
             {{- range .Values.a2a.extraEnv }}
             - {{ toYaml . | nindent 14 | trim }}
             {{- end }}
