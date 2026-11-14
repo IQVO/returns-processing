@@ -12,6 +12,10 @@
 //	ANALYTICS_DATABASE_URL  REQUIRED. Analytical Postgres DSN, ideally a read-only role
 //	HTTP_ADDR               listen address (default :8092)
 //	LOG_LEVEL               debug | info | warn (or warning) | error (default info)
+//	OTEL_SERVICE_NAME       service.name of spans and metrics (default returns-reports)
+//	OTEL_EXPORTER_OTLP_ENDPOINTCollector OTLP/gRPC endpoint (default localhost:4317)
+//	SERVICE_VERSION         service.version (default dev)
+//	ENVIRONMENT             deployment.environment.name (default local)
 package main
 
 import (
@@ -28,6 +32,7 @@ import (
 
 	inboundhttp "github.com/claudioed/returns-processing/internal/adapters/inbound/http"
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/analyticsstore"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/telemetry"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -44,6 +49,15 @@ func main() {
 func run() error {
 	logger := newLogger(getenv("LOG_LEVEL", "info"))
 	slog.SetDefault(logger)
+
+	// Telemetry comes up before the router is built: otelchimetric binds the
+	// global MeterProvider on construction.
+	telCfg := loadTelemetryEnv(os.Getenv)
+	flushTelemetry, err := startTelemetry(logger, telCfg)
+	if err != nil {
+		return err
+	}
+	defer flushTelemetry()
 
 	url := os.Getenv("ANALYTICS_DATABASE_URL")
 	if url == "" {
@@ -64,8 +78,10 @@ func run() error {
 
 	httpAddr := getenv("HTTP_ADDR", ":8092")
 	srv := &http.Server{
-		Addr:              httpAddr,
-		Handler:           inboundhttp.NewReportsRouter(&inboundhttp.ReportsServer{Reader: analyticsstore.NewReader(pool)}),
+		Addr: httpAddr,
+		Handler: inboundhttp.NewReportsRouter(&inboundhttp.ReportsServer{
+			Reader: analyticsstore.NewReader(pool), Logger: logger, ServiceName: telCfg.serviceName,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)
@@ -89,6 +105,8 @@ func run() error {
 	return srv.Shutdown(shutdownCtx)
 }
 
+// newLogger builds the JSON logger; the handler is wrapped so a record written
+// with a span-carrying context also carries trace_id and span_id.
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(level) {
@@ -101,7 +119,7 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lvl = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
+	return slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})))
 }
 
 func getenv(key, fallback string) string {

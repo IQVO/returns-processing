@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,6 +41,9 @@ type adapters struct {
 	idempotency func(http.Handler) http.Handler
 	// ping is the Postgres liveness check behind /readyz.
 	ping func(context.Context) error
+	// authMetrics counts the AuthorizeReturn decisions (the Tier 2 counter of
+	// ADR 0011); nil leaves the use case uncounted.
+	authMetrics ports.AuthorizationMetrics
 }
 
 // buildAdapters wires the Postgres adapters over pool: every repository, the
@@ -71,12 +75,15 @@ func buildAdapters(pool *pgxpool.Pool) adapters {
 	return ad
 }
 
-// buildServer wires the use cases into the HTTP adapter.
-func buildServer(a adapters, readiness *inboundhttp.Readiness) *inboundhttp.Server {
+// buildServer wires the use cases into the HTTP adapter. logger and
+// serviceName feed its observability middleware (request log, server span,
+// request-duration histogram).
+func buildServer(a adapters, readiness *inboundhttp.Readiness, logger *slog.Logger, serviceName string) *inboundhttp.Server {
 	return &inboundhttp.Server{
 		AuthorizeReturn: &usecases.AuthorizeReturn{
 			RMAs: a.rmas, Policies: a.policies, Allocated: a.allocated, Manifested: a.manifested,
 			Events: a.events, IDs: a.ids, Clock: a.clock, UnitOfWork: a.uow,
+			Metrics: a.authMetrics,
 		},
 		GetReturn:   &usecases.GetReturn{RMAs: a.rmas},
 		ListByOrder: &usecases.ListReturnsByOrder{RMAs: a.rmas},
@@ -94,6 +101,8 @@ func buildServer(a adapters, readiness *inboundhttp.Readiness) *inboundhttp.Serv
 		GetDispositionPolicy:     &usecases.GetDispositionPolicy{Policies: a.policies},
 		Idempotency:              a.idempotency,
 		Readiness:                readiness,
+		Logger:                   logger,
+		ServiceName:              serviceName,
 	}
 }
 
