@@ -109,6 +109,7 @@ flowchart TB
   aggregate with repository support, but no v1 use case transitions an RMA
   past AUTHORIZED; the receipt carries the arrival fact instead.
 - *Restock completed* — the stow is inventory-storage's RF action; its
-  `ItemStowed` promotion is the planned loop closure (ADR 0001/0003).
+  `ItemStowed` is on its integration topic (its ADR 0043), and consuming it here is the planned loop
+  closure (ADR 0001/0003).
 - *Carrier label booked / refund issued* — excluded from v1 (ADR 0001):
   an external party and finance respectively.

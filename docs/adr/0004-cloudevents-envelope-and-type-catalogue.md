@@ -94,3 +94,8 @@ CloudEvent is logged and skipped, never retried forever.
 - The analytics mirror is declared planned, not built: when it ships it will
   carry the same `type` and `id` per occurrence, and this ADR gains an
   amendment rather than a rewrite.
+
+## Addendum 2026-11-13: current state
+
+- The analytics mirror is built, by [ADR 0007](0007-analytics-read-side.md): all seven types below are also written to `warehouse.returns-processing.analytics` with the same `type` and `id` and `dataschema` `urn:warehouse:returns-processing:analytics:<EventName>:v1` (`TopicAnalytics` in `internal/adapters/outbound/kafka/encoder.go`; the seven `*Analytics` messages in `apis/asyncapi.yaml`). Read "events (analytics planned)" in the table as "events and analytics".
+- Only `cmd/returns-projector` consumes the analytics topic (`apis/asyncapi.yaml`, channel `warehouse.returns-processing.analytics`); the Status line above already records the amendment.

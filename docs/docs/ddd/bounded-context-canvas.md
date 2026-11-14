@@ -165,8 +165,8 @@ runtime signals.
 
 - Shipped-quantity check per line — waits on order-management adding `quantity` to its released
   line (additive producer change, asked separately; roadmap).
-- Restock loop closure — waits on inventory-storage promoting `ItemStowed` to its integration
-  topic; until then a staged line's stow is invisible here (roadmap).
-- Analytics mirror + read side — its own later decision (ADR 0004 records it as planned).
+- Restock loop closure — inventory-storage already publishes `ItemStowed` on its integration topic
+  (its ADR 0043); this service has no consumer for it yet, so a staged line's stow is invisible
+  here (roadmap).
 - Runtime metrics: none exported; `GET /metrics` was dropped from `apis/openapi.yaml` (ADR 0009) so
   the contract matches the binary. Add the route back to the spec only together with the handler.

@@ -76,8 +76,9 @@ touches the stock ledger. That lifecycle and its policy object belong to a conte
 - **Shipped-quantity check per line**: order-management's allocated lines carry no `quantity`; until
   that additive producer change lands, the authorized quantity is capped by
   `DispositionPolicy.max_units_per_line` only.
-- **Restock loop closure**: inventory-storage's `ItemStowed` is not yet on its integration topic;
-  when promoted, this service can consume it to see a staged line reach a bin.
+- **Restock loop closure**: inventory-storage's `ItemStowed` is on its integration topic (promoted
+  2026-10-21, inventory-storage ADR 0043); this service has no consumer for it yet, so it cannot
+  see a staged line reach a bin.
 
 Built since this page last changed: the **analytics read side** (ADR 0007 —
 `warehouse.returns-processing.analytics`, projector, reports) shipped on
