@@ -135,7 +135,8 @@ binary_env() {
 api_vars=($(binary_env))
 (( ${#api_vars[@]} >= 10 )) || fail "found only ${#api_vars[@]} env literals in cmd/api; the scan is looking in the wrong place"
 full_deployment="$(render_only deployment.yaml "${everything[@]}")"
-for var in "${api_vars[@]}" MIGRATIONS_DATABASE_URL; do
+# ENVIRONMENT is read by telemetry.Setup (internal/adapters/outbound/telemetry), not by a cmd literal.
+for var in "${api_vars[@]}" MIGRATIONS_DATABASE_URL ENVIRONMENT; do
   grep -q "name: $var\$" <<<"$full_deployment" || fail "the Deployment does not render $var, which the binary reads"
 done
 # Every key the ConfigMap renders is a variable cmd/api reads (no dead keys).
@@ -320,6 +321,59 @@ together="$(render "${base[@]}" --set mcp.enabled=true --set a2a.enabled=true --
 for component in api mcp a2a frontend analytics-projector analytics-reports; do
   grep -q "app.kubernetes.io/component: $component\$" <<<"$together" || fail "$component was not rendered when every component is enabled"
 done
+
+# --- OpenTelemetry (ADR 0011, fleet observability standard) ------------------
+# Every component that runs a binary renders SERVICE_VERSION, ENVIRONMENT and
+# the OTEL_* pair; otel.* / environment / serviceVersion are the only source.
+otel_endpoint="otel-collector.observability.svc.cluster.local:4317"
+app_version="$(awk '/^appVersion:/ {gsub(/"/, "", $2); print $2; exit}' "$chart_dir/Chart.yaml")"
+[[ -n "$app_version" ]] || fail "could not read appVersion from Chart.yaml"
+# component template -> OTEL_SERVICE_NAME it must render
+otel_components=(
+  "deployment.yaml:returns-processing"
+  "mcp-deployment.yaml:returns-processing-mcp"
+  "a2a-deployment.yaml:returns-processing-a2a"
+  "projector-deployment.yaml:returns-processing-projector"
+  "reports-deployment.yaml:returns-processing-reports"
+)
+# A binary of the repo without a Deployment in this list (or a Deployment
+# without a cmd/<dir>/telemetry.go) fails: every long-running binary is observed.
+cmd_dirs=0
+for d in "$repo_dir"/cmd/*/; do
+  cmd_dirs=$((cmd_dirs + 1))
+  [[ -f "${d}telemetry.go" ]] || fail "cmd/$(basename "$d") has no telemetry.go"
+done
+(( cmd_dirs == ${#otel_components[@]} )) || fail "cmd/ holds $cmd_dirs binaries but the test lists ${#otel_components[@]} OTel components"
+for pair in "${otel_components[@]}"; do
+  tpl="${pair%%:*}"; svc="${pair#*:}"
+  rendered="$(render_only "$tpl" "${everything[@]}")"
+  [[ "$(env_value "$rendered" OTEL_EXPORTER_OTLP_ENDPOINT)" == "$otel_endpoint" ]] || fail "$tpl does not render OTEL_EXPORTER_OTLP_ENDPOINT from otel.endpoint"
+  [[ "$(env_value "$rendered" OTEL_SERVICE_NAME)" == "$svc" ]] || fail "$tpl must render OTEL_SERVICE_NAME=$svc"
+  [[ "$(env_value "$rendered" SERVICE_VERSION)" == "local" ]] || fail "$tpl SERVICE_VERSION must follow image.tag"
+  [[ "$(env_value "$rendered" ENVIRONMENT)" == "production" ]] || fail "$tpl ENVIRONMENT must come from environment"
+done
+# serviceVersion empty falls back to image.tag, then to the chart appVersion.
+untagged="$(render_only deployment.yaml "${base[@]}" --set image.tag=)"
+[[ "$(env_value "$untagged" SERVICE_VERSION)" == "$app_version" ]] || fail "SERVICE_VERSION must fall back to the chart appVersion"
+tagged="$(render_only deployment.yaml "${base[@]}" --set image.tag=v9.9.9)"
+[[ "$(env_value "$tagged" SERVICE_VERSION)" == "v9.9.9" ]] || fail "SERVICE_VERSION must follow image.tag"
+pinned="$(render_only mcp-deployment.yaml "${base[@]}" --set mcp.enabled=true --set image.tag=v9.9.9 --set serviceVersion=1.2.3)"
+[[ "$(env_value "$pinned" SERVICE_VERSION)" == "1.2.3" ]] || fail "serviceVersion must win over image.tag"
+# The values are the only source: overriding them changes every component.
+renamed="$(render_only a2a-deployment.yaml "${base[@]}" --set a2a.enabled=true --set otel.serviceName=rp --set otel.endpoint=https://collector:4317 --set environment=staging)"
+[[ "$(env_value "$renamed" OTEL_SERVICE_NAME)" == "rp-a2a" ]] || fail "otel.serviceName must reach OTEL_SERVICE_NAME (as <serviceName>-a2a)"
+[[ "$(env_value "$renamed" OTEL_EXPORTER_OTLP_ENDPOINT)" == "https://collector:4317" ]] || fail "otel.endpoint must reach OTEL_EXPORTER_OTLP_ENDPOINT"
+[[ "$(env_value "$renamed" ENVIRONMENT)" == "staging" ]] || fail "environment must reach ENVIRONMENT"
+# otel.enabled=false renders no OTEL_* env anywhere (SERVICE_VERSION stays: it labels the build).
+otel_off="$(render "${base[@]}" "${everything[@]}" --set otel.enabled=false)"
+if grep -q 'name: OTEL_' <<<"$otel_off"; then fail "otel.enabled=false must render no OTEL_* env in any component"; fi
+grep -q 'name: SERVICE_VERSION$' <<<"$otel_off" || fail "SERVICE_VERSION must still render with otel.enabled=false"
+# The chart owns these names: extraEnv of any component refuses them.
+expect_refusal "OTEL_SERVICE_NAME through extraEnv" "extraEnv sets OTEL_SERVICE_NAME" "${base[@]}" --set 'extraEnv[0].name=OTEL_SERVICE_NAME' --set 'extraEnv[0].value=x'
+expect_refusal "SERVICE_VERSION through mcp.extraEnv" "mcp.extraEnv sets SERVICE_VERSION" "${base[@]}" --set mcp.enabled=true --set 'mcp.extraEnv[0].name=SERVICE_VERSION' --set 'mcp.extraEnv[0].value=x'
+expect_refusal "ENVIRONMENT through a2a.extraEnv" "a2a.extraEnv sets ENVIRONMENT" "${base[@]}" --set a2a.enabled=true --set 'a2a.extraEnv[0].name=ENVIRONMENT' --set 'a2a.extraEnv[0].value=x'
+expect_refusal "OTEL_EXPORTER_OTLP_ENDPOINT through analytics.projector.extraEnv" "analytics.projector.extraEnv sets OTEL_EXPORTER_OTLP_ENDPOINT" "${base[@]}" "${an[@]}" --set 'analytics.projector.extraEnv[0].name=OTEL_EXPORTER_OTLP_ENDPOINT' --set 'analytics.projector.extraEnv[0].value=x'
+expect_refusal "OTEL_SERVICE_NAME through analytics.reports.extraEnv" "analytics.reports.extraEnv sets OTEL_SERVICE_NAME" "${base[@]}" "${an[@]}" --set 'analytics.reports.extraEnv[0].name=OTEL_SERVICE_NAME' --set 'analytics.reports.extraEnv[0].value=x'
 
 # --- the Gateway API routes + Kong plugins (fleet decision 2026-10-13) ------
 # Off by default: standalone installs without Kong are unaffected.

@@ -58,6 +58,10 @@ spec:
               value: {{ .Values.analytics.reports.httpAddr | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.config.logLevel | quote }}
+            # OpenTelemetry (ADR 0011): SERVICE_VERSION and ENVIRONMENT always; the
+            # OTEL_* pair only while otel.enabled (the binary then falls back to
+            # localhost:4317). Chart-owned: extraEnv may not set them.
+            {{- include "returns-processing.otelEnv" (dict "root" . "suffix" "-reports") | nindent 12 }}
             {{- range .Values.analytics.reports.extraEnv }}
             - {{ toYaml . | nindent 14 | trim }}
             {{- end }}
