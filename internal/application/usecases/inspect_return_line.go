@@ -2,12 +2,14 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/claudioed/returns-processing/internal/application/ports"
 	"github.com/claudioed/returns-processing/internal/application/views"
 	"github.com/claudioed/returns-processing/internal/domain/disposition"
+	"github.com/claudioed/returns-processing/internal/domain/returnreceipt"
 	"github.com/claudioed/returns-processing/internal/domain/shared"
 )
 
@@ -36,6 +38,11 @@ type InspectReturnLine struct {
 	IDs          ports.IDGen
 	Clock        ports.Clock
 	UnitOfWork   ports.UnitOfWork // nil = unwrapped
+	// Advices and AdviceFeed are the network return-advice seam of ADR 0012.
+	// Both nil (tests, BDD, the non-network flows) means the completion hook
+	// is off: inspecting a non-network receipt is unchanged.
+	Advices    ports.ReturnAdviceViews
+	AdviceFeed ports.ReturnAdviceFeed
 }
 
 // Execute inspects the line and returns the decision.
@@ -88,7 +95,87 @@ func (uc *InspectReturnLine) Execute(ctx context.Context, in Inspection) (*dispo
 	}); err != nil {
 		return nil, err
 	}
+	// ADR 0012: a receipt opened against a network advice (its rmaId IS the
+	// advice's authorizationId) composes and stores the advice's outcome the
+	// moment its last line is graded — AFTER the unit of work, so no network
+	// concern ever sits inside it. The submit drain does the HTTP.
+	if err := uc.completeAdvice(ctx, r); err != nil {
+		return nil, err
+	}
 	return d, nil
+}
+
+// completeAdvice stores the composed outcome when r is the FIRST fully
+// inspected receipt of a network advice (ADR 0012 Decision 5). A receipt of
+// no advice (the non-network flows), an incomplete one, or an advice whose
+// outcome already exists does nothing. The multi-parcel gap is recorded in
+// the ADR: the first completed receipt wins, once.
+func (uc *InspectReturnLine) completeAdvice(ctx context.Context, r *returnreceipt.Receipt) error {
+	if uc.Advices == nil || uc.AdviceFeed == nil || !fullyInspected(r) {
+		return nil
+	}
+	authorizationID := r.RMAID()
+	advice, ok, err := uc.Advices.Get(ctx, authorizationID)
+	if err != nil || !ok || advice.OutcomeState != "" {
+		return err
+	}
+	outcome, err := uc.composeOutcome(ctx, advice, r)
+	if err != nil {
+		return err
+	}
+	err = uc.AdviceFeed.MarkOutcomePending(ctx, authorizationID, outcome)
+	if errors.Is(err, ports.ErrOutcomeAlreadyStored) {
+		return nil // a sibling receipt won the race; the once-rule holds
+	}
+	return err
+}
+
+// composeOutcome folds the receipt's latest disposition decisions into the
+// network's outcome body: RESTOCK units are restockable, every other outcome
+// unsellable; the ownerRef of a line the advice authorized rides its
+// matching advice line (by catalog item); a sku the advice never authorized
+// is submitted anyway — the network records it unexpected, and goods on the
+// dock are never turned away.
+func (uc *InspectReturnLine) composeOutcome(ctx context.Context, advice views.ReturnAdvice, r *returnreceipt.Receipt) (views.ReturnOutcome, error) {
+	owners := map[string]string{}
+	for _, l := range advice.Lines {
+		owners[l.CatalogItemID] = l.OwnerRef
+	}
+	out := views.ReturnOutcome{AuthorizationID: advice.AuthorizationID, NodeID: advice.NodeID, ReceivedAt: r.OpenedAt()}
+	index := map[string]int{}
+	for _, line := range r.Lines() {
+		d, err := uc.Dispositions.FindByReceiptLine(ctx, r.ID(), line.LineNo())
+		if err != nil {
+			return views.ReturnOutcome{}, err
+		}
+		sku := line.SKU()
+		key := sku + "\x00" + owners[sku]
+		i, known := index[key]
+		if !known {
+			out.Lines = append(out.Lines, views.ReturnOutcomeLine{CatalogItemID: sku, OwnerRef: owners[sku]})
+			i = len(out.Lines) - 1
+			index[key] = i
+		}
+		if d.Outcome() == disposition.OutcomeRestock {
+			out.Lines[i].QtyRestockable += d.Quantity()
+		} else {
+			out.Lines[i].QtyUnsellable += d.Quantity()
+		}
+	}
+	return out, nil
+}
+
+// fullyInspected reports whether every line of the receipt carries a grade.
+func fullyInspected(r *returnreceipt.Receipt) bool {
+	if len(r.Lines()) == 0 {
+		return false
+	}
+	for _, l := range r.Lines() {
+		if !l.Inspected() {
+			return false
+		}
+	}
+	return true
 }
 
 // classification derives the domain Classification from the product-master
