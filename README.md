@@ -217,9 +217,16 @@ go run ./cmd/api              # migrations run automatically at startup; listens
 | `SHUTDOWN_DRAIN_DELAY` | `5s` | wait after flipping `/readyz` before closing the listener (`0` = none) |
 | `MIGRATIONS_DATABASE_URL` | `DATABASE_URL` | direct (non-PgBouncer) DSN for the boot migrations |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` (`warning` accepted), case-insensitive |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | Collector OTLP/gRPC endpoint (`host:port` or URL); export never blocks boot |
+| `OTEL_SERVICE_NAME` | `returns-processing` | `service.name` of spans and metrics |
+| `SERVICE_VERSION` | `dev` | `service.version` |
+| `ENVIRONMENT` | `local` | `deployment.environment.name` |
 
 `cmd/mcp`: `MCP_ADDR` (`:8090`), `DATABASE_URL` (**required**),
 `MIGRATIONS_DATABASE_URL`, `LOG_LEVEL`.
+Every binary also reads the four observability variables above
+(`OTEL_SERVICE_NAME` defaults to `returns-processing-mcp`, `-a2a`,
+`returns-projector` and `returns-reports` respectively).
 `cmd/a2a`: `A2A_ADDR` (`:8093`), `DATABASE_URL` (**required**),
 `A2A_AGENT_URL` (**required**, the absolute URL advertised on the Agent
 Card), `MIGRATIONS_DATABASE_URL`, `LOG_LEVEL`.
@@ -256,26 +263,33 @@ curl http://localhost:8092/reports/freshness
 
 ## Observability
 
-What exists today, and what deliberately does not (see the
+What the service emits (the fleet observability standard,
+[ADR 0011](docs/adr/0011-adopt-the-fleet-observability-standard.md); details on the
 [observability page](docs/docs/operations/observability.md)):
 
+- **Traces and metrics over OTLP/gRPC** — every binary calls `telemetry.Setup`
+  and pushes to `OTEL_EXPORTER_OTLP_ENDPOINT` (default `localhost:4317`).
+  Export is non-blocking: no Collector costs telemetry, never availability.
+  There is no `/metrics` route; nothing is scraped.
+- **Metrics** — `http.server.request.duration` on every chi router (labelled by
+  route pattern), the Go runtime metrics, and the business counter
+  `returns.authorizations.decided` (attributes `outcome`, and `reason` on a
+  rejection) on `POST /returns`.
 - **Logs** — one JSON line per event (`log/slog`, stdout), level from
-  `LOG_LEVEL`. Boot problems are one aggregated `invalid configuration: ...`
-  error naming every missing variable; readiness flips
-  (`not ready: postgres` / `not ready: kafka`), outbox relay dead-letter and
-  attempt-cap lines, and consumer skip/dead-letter lines are the ones an
+  `LOG_LEVEL`; a record written inside a request carries `trace_id` and
+  `span_id`. Each request logs one `http request` line (`/healthz` and
+  `/readyz` excluded). Boot problems are one aggregated
+  `invalid configuration: ...` error naming every missing variable; readiness
+  flips (`not ready: postgres` / `not ready: kafka`), outbox relay dead-letter
+  and attempt-cap lines, and consumer skip/dead-letter lines are the ones an
   operator greps for.
 - **Probes** — `GET /healthz` (liveness only) and `GET /readyz` (the drain
   gate AND a Postgres ping AND a Kafka broker metadata check, cached a few
   seconds).
-- **Metrics — none.** The service exports no runtime metrics: no Prometheus
-  registry, no OTel meters, and `apis/openapi.yaml` declares no `/metrics`
-  route (it was dropped in the REST guideline cutover so the contract matches
-  the binary). The only runtime signals today are the logs and the two probes.
-- **Traces — no SDK wired.** Outgoing Kafka messages carry only the
-  CloudEvents `content-type` header (no `traceparent`/`tracestate` is
-  propagated); the service starts no spans of its own (the A2A adapter's `otel.Tracer` calls
-  are no-ops without a provider).
+- **Not propagated across Kafka** — the `outbox` table has no `headers`
+  column, so published events carry only the CloudEvents `content-type`
+  header, no `traceparent`/`tracestate` (a migration, out of scope of
+  ADR 0011).
 
 ---
 

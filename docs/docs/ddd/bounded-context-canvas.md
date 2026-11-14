@@ -157,9 +157,9 @@ window, unexpected return, staged line, local copy.
 | Catalogue fitness: every AsyncAPI type has an ADR 0004 line | `internal/architecture/catalogue_fitness_test.go` |
 | Hexagonal fitness: no memory adapters in `cmd/**`, no auth, no flat envelope, relay attempt cap | `internal/architecture/*` |
 
-The service exports **no runtime metrics today** (the spec declares no `/metrics` route — see
-[Observability](/docs/operations/observability)); the verification above is build-time gates, not
-runtime signals.
+The verification above is build-time gates, not runtime signals. The runtime signals (OTLP traces and
+metrics, trace-correlated logs, the `returns.authorizations.decided` counter) are described in
+[Observability](/docs/operations/observability) and [ADR 0011](/docs/adr/0011-adopt-the-fleet-observability-standard).
 
 ## Open questions
 
@@ -168,5 +168,5 @@ runtime signals.
 - Restock loop closure — waits on inventory-storage promoting `ItemStowed` to its integration
   topic; until then a staged line's stow is invisible here (roadmap).
 - Analytics mirror + read side — its own later decision (ADR 0004 records it as planned).
-- Runtime metrics: none exported; `GET /metrics` was dropped from `apis/openapi.yaml` (ADR 0009) so
-  the contract matches the binary. Add the route back to the spec only together with the handler.
+- Trace context across Kafka: not propagated (the `outbox` table has no `headers` column; adding one
+  is a migration, deferred by ADR 0011). `GET /metrics` stays undeclared: metrics are pushed over OTLP.

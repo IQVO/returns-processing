@@ -69,6 +69,19 @@ It wires **no** write use case, no outbox, no relay, no consumers and no Kafka c
 Read-only like `cmd/mcp`: no write use case, no outbox, no relay, no consumers, no Kafka client
 ([ADR 0008](/docs/adr/0008-a2a-inbound-adapter)).
 
+## Observability (every binary)
+
+`cmd/api`, `cmd/mcp`, `cmd/a2a`, `cmd/returns-projector` and `cmd/returns-reports` all read the same
+four variables ([ADR 0011](/docs/adr/0011-adopt-the-fleet-observability-standard); what they emit is
+on the [Observability](/docs/operations/observability) page). None is mandatory.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | Collector OTLP/gRPC endpoint, `host:port` (plaintext) or a URL; empty falls back to the default, it does not disable export |
+| `OTEL_SERVICE_NAME` | `returns-processing`, `returns-processing-mcp`, `returns-processing-a2a`, `returns-projector`, `returns-reports` (per binary) | `service.name` |
+| `SERVICE_VERSION` | `dev` | `service.version` |
+| `ENVIRONMENT` | `local` | `deployment.environment.name` (read by `telemetry.Setup`) |
+
 ## Fixed values (not configurable)
 
 | Value | What |
@@ -108,7 +121,18 @@ mcp:
 a2a:
   enabled: false               # the read-only A2A Deployment + Service (port 8093), off by default
   agentUrl: ""                 # A2A_AGENT_URL; empty = the in-cluster Service DNS name
+
+otel:
+  enabled: true                # false renders no OTEL_* env (the binaries then export to localhost:4317)
+  endpoint: "otel-collector.observability.svc.cluster.local:4317"   # OTEL_EXPORTER_OTLP_ENDPOINT
+  serviceName: "returns-processing"   # OTEL_SERVICE_NAME of the api; <name>-mcp, -a2a, -projector, -reports elsewhere
+serviceVersion: ""             # SERVICE_VERSION; empty = image.tag, then the chart appVersion
+environment: "production"      # ENVIRONMENT
 ```
+
+Every Deployment that runs a binary (api, mcp, a2a, projector, reports) renders `SERVICE_VERSION`,
+`ENVIRONMENT` and, while `otel.enabled`, the two `OTEL_*` variables; the chart refuses those four
+names in any `extraEnv`.
 
 The chart refuses any `*_MODE` value, mounts the env ConfigMap via `envFrom`, keeps `DATABASE_URL`
 in a Secret, and its pod hardening + grace period are asserted by
