@@ -100,7 +100,7 @@ From `internal/adapters/inbound/kafka/{consumer,kafka,deadletter}.go`:
   a frozen copy.
 
 What a missing copy does at request time: an order line that is not in the allocations copy is
-refused (`ErrOrderLineNotAllocated`, `404`); a line with no manifested work unit is rejected by
+refused (`ErrOrderLineNotAllocated`, `409 return-not-authorizable` with code `ORDER_LINE_NOT_ALLOCATED`); a line with no manifested work unit is rejected by
 the domain (`ErrLineNotManifested`); a SKU with no classification stays unclassified, so grading
 falls to the `*` default rule. See [Troubleshooting](/docs/operations/troubleshooting).
 
