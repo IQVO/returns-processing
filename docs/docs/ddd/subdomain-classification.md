@@ -68,8 +68,8 @@ aggregator.
 ADR 0001 declares no condition that flips the verdict and none is claimed here. The two roadmap
 items complete the current shape instead of reclassifying it: `order-management` adding
 `quantity` to its allocated lines (which turns the shipped-quantity check from a policy cap into
-a real check), and `inventory-storage` promoting `ItemStowed` to its integration topic (which
-closes the restock loop this context deliberately leaves open. Until then: invest
+a real check), and this service consuming `ItemStowed`, which `inventory-storage` already publishes
+on its integration topic (which would close the restock loop this context leaves open). Until then: invest
 for Supporting, keep it simple, fixed and well tested, and do not gold-plate.
 
 ## Neighbours (from the aggregator's table)

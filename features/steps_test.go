@@ -25,6 +25,7 @@ var domainErrors = map[string]error{
 	"ErrOpenRMAExists":            returnauthorization.ErrOpenRMAExists,
 	"ErrLineAlreadyInspected":     returnreceipt.ErrLineAlreadyInspected,
 	"ErrInspectedExceedsReceived": returnreceipt.ErrInspectedExceedsReceived,
+	"ErrInvalidEvent":             usecases.ErrInvalidEvent,
 }
 
 // registerSetupSteps registers the clock, policy-declaration and local-copy

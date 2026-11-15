@@ -25,11 +25,20 @@
 //	                                    fulfillment-execution's
 //	                                    PackageManifested feed the local
 //	                                    copies (ADR 0003)
+//	NETWORK_RETURNS_POLLER_ENABLED      optional, default off. The network return-advices
+//	                                    poller of ADR 0012 (the study cluster sets it on)
+//	NETWORK_RETURNS_BASE_URL            required when the poller is on: the network's Vendor API
+//	NETWORK_RETURNS_VENDOR_ID           required when the poller is on: the vendor we operate as
+//	NETWORK_RETURNS_POLL_INTERVAL       poller tick (Go duration or seconds, default 30s)
 //	OUTBOX_RELAY_INTERVAL               relay poll interval (Go duration or seconds, default 1s)
 //	OUTBOX_MAX_ATTEMPTS                 failures before the relay excludes a row (default 20, 0 = unlimited)
 //	HTTP_ADDR                           listen address (default :8080)
 //	SHUTDOWN_DRAIN_DELAY                wait after flipping /readyz before closing (default 5s, 0 = none)
 //	LOG_LEVEL                           debug | info | warn | error (default info)
+//	OTEL_SERVICE_NAME                   service.name of spans and metrics (default returns-processing)
+//	OTEL_EXPORTER_OTLP_ENDPOINT         Collector OTLP/gRPC endpoint (default localhost:4317)
+//	SERVICE_VERSION                     service.version (default dev)
+//	ENVIRONMENT                         deployment.environment.name (default local)
 //
 // A consumer that dies is a process death: serveUntilSignal shuts the service
 // down and run returns the consumer's error, so main exits non-zero and the
@@ -55,6 +64,9 @@ import (
 	inboundhttp "github.com/claudioed/returns-processing/internal/adapters/inbound/http"
 	outboundkafka "github.com/claudioed/returns-processing/internal/adapters/outbound/kafka"
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/postgres"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/retailnetwork"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/telemetry"
+	"github.com/claudioed/returns-processing/internal/application/usecases"
 )
 
 // shutdownTimeout bounds the HTTP server's graceful drain.
@@ -82,6 +94,16 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Telemetry comes up before the router and the counter are built: both
+	// bind the global MeterProvider on construction. Its flush is deferred
+	// first so it runs last, after everything that records has stopped.
+	telCfg := loadTelemetryEnv(os.Getenv)
+	flushTelemetry, err := startTelemetry(logger, telCfg)
+	if err != nil {
+		return err
+	}
+	defer flushTelemetry()
 
 	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
 	if err != nil {
@@ -116,11 +138,22 @@ func run(ctx context.Context) error {
 	)
 
 	ad := buildAdapters(pool)
+	ad.authMetrics, err = telemetry.NewAuthorizationMetrics()
+	if err != nil {
+		return err
+	}
 	consumers := startConsumers(ad, cfg.brokers, cfg.groups, logger)
+	// The network return-advices poller (ADR 0012) runs only behind its
+	// flag; disabled, no network call is even possible. Its failures are
+	// logged and retried, never fatal.
+	if err := startReturnsPoller(ctx, ad, os.Getenv, logger); err != nil {
+		logger.Error("network return-advices poller misconfigured", "error", err)
+		return err
+	}
 	readiness := buildReadiness(ad, outboundkafka.NewBrokerCheck(cfg.brokers).Check)
 	httpServer := &http.Server{
 		Addr:              cfg.httpAddr,
-		Handler:           inboundhttp.NewRouter(buildServer(ad, readiness)),
+		Handler:           inboundhttp.NewRouter(buildServer(ad, readiness, logger, telCfg.serviceName)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -131,6 +164,36 @@ func run(ctx context.Context) error {
 		"dlq_topic", outboundkafka.TopicDLQ,
 		"consumers", len(consumers.workers))
 	return serveUntilSignal(ctx, logger, httpServer, readiness, relay, consumers)
+}
+
+// startReturnsPoller boots the ADR 0012 worker when its flag is on: the
+// gateway against the network's Vendor API, the poll and drain use cases
+// over the advice view, one goroutine that dies with ctx. Disabled (the
+// default outside the study cluster), it is a no-op.
+func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) string, logger *slog.Logger) error {
+	netCfg, err := loadNetworkReturnsConfig(getenv)
+	if err != nil {
+		return err
+	}
+	if !netCfg.enabled {
+		return nil
+	}
+	gateway, err := retailnetwork.NewLiveReturnsGateway(retailnetwork.ReturnsConfig{
+		BaseURL: netCfg.baseURL, VendorID: netCfg.vendorID, Logger: logger,
+	})
+	if err != nil {
+		return err
+	}
+	poller := &returnsPoller{
+		poll:     &usecases.PollReturnAdvices{Gateway: gateway, Views: ad.advices, Feed: ad.advices},
+		drain:    &usecases.SubmitReturnOutcomes{Gateway: gateway, Views: ad.advices, Feed: ad.advices},
+		interval: netCfg.interval,
+		logger:   logger,
+	}
+	pollerCtx, stop := context.WithCancel(ctx)
+	defer stop() // belt to run's exits; the goroutine also ends with ctx
+	go func() { _ = poller.Run(pollerCtx) }()
+	return nil
 }
 
 // serveUntilSignal runs httpServer, the consumers and the relay until

@@ -38,18 +38,28 @@ const instructions = "Reverse-logistics returns of the warehouse (read-only): se
 	"or rejecting a return, receiving and inspecting goods, overriding a disposition and declaring the " +
 	"policy are REST operations of returns-processing."
 
-// NewServer builds the MCP server for this bounded context with every tool
-// registered.
+// NewServer builds the MCP server for this bounded context with every tool,
+// resource, and workflow prompt registered.
 func NewServer(deps Deps) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: serverName, Version: serverVersion},
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 	deps.registerTools(server)
+	deps.registerResources(server)
+	deps.registerPrompts(server)
 	return server
 }
 
 // Handler returns the Streamable HTTP handler for the MCP server.
 func Handler(server *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	// Stateless (Agentic Standard v2, AS-4): no Mcp-Session-Id is issued, so
+	// the server also answers the 2026-07-28 revision's per-request handshake
+	// (server/discover) while legacy initialize clients keep working.
+	// Nothing here relies on cross-call session state: every tool is a pure
+	// read, so there is no conversation to remember.
+	return mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{Stateless: true},
+	)
 }

@@ -83,3 +83,7 @@ never writes the stock ledger: a `RESTOCK` disposition hands the goods to
 - Fleet plan: `~/warehouse-systems/.hermes/plans/2026-10-20_231017-returns-processing-and-exception-management.md` (decision log, pinned contracts, waves).
 - Precedents: `inbound-receiving` ADR 0001 (receipt seam), `inventory-storage`
   ADR 0013 (event-fed local copies instead of synchronous reads).
+
+## Addendum 2026-11-13: current state
+
+- The producer-side follow-up for `ItemStowed` is done: inventory-storage publishes it on its integration topic (inventory-storage ADR 0043, 2026-10-21). This service does not consume it yet, so the restock loop is still open (see the addendum to [ADR 0003](0003-local-copies-and-consumed-contracts.md)).

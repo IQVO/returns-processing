@@ -50,6 +50,12 @@ func TestProcessedEventsContract(t *testing.T) {
 	})
 }
 
+func TestReturnAdvicesContract(t *testing.T) {
+	repocontract.ReturnAdvices(t, func(t *testing.T) repocontract.ReturnAdviceStore {
+		return memory.NewReturnAdvices()
+	})
+}
+
 func TestAllocatedLinesContract(t *testing.T) {
 	repocontract.AllocatedLines(t, func(t *testing.T) repocontract.AllocatedLinesSeeds {
 		return &memoryAllocated{memory.NewAllocatedLines()}

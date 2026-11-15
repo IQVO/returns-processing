@@ -108,6 +108,16 @@ config:
   # SHUTDOWN_DRAIN_DELAY: wait after /readyz flips before closing the
   # listener. Empty = not rendered; the binary defaults to 5s.
   shutdownDrainDelay: ""
+  # The network return-advices poller (ADR 0012) — the service's first
+  # vendor-connectivity integration. Disabled by default (fail-closed: no
+  # variable is rendered, no call is possible); the study cluster sets
+  # enabled: true. baseUrl and vendorId are required when enabled; the
+  # binary fails at boot naming them if the chart is forced around this.
+  networkReturns:
+    enabled: false            # NETWORK_RETURNS_POLLER_ENABLED
+    baseUrl: ""               # NETWORK_RETURNS_BASE_URL (required when enabled)
+    vendorId: ""              # NETWORK_RETURNS_VENDOR_ID (required when enabled)
+    pollInterval: ""          # NETWORK_RETURNS_POLL_INTERVAL (Go duration or seconds; empty = 30s)
   # The STABLE consumer group ids of the three local-copy consumers
   # (MANDATORY: the binary exits at boot without them, and the chart refuses
   # to render with an empty one). They are fixed names, not derived from the
@@ -149,7 +159,26 @@ database:
 kafka:
   brokers: ""
 
-# Extra env vars appended to the api container as a raw list.
+# --- OpenTelemetry (ADR 0011, the fleet observability standard) ---
+# Every binary exports traces and metrics over OTLP/gRPC to the Collector at
+# otel.endpoint (host:port or URL). Export is non-blocking: a missing
+# Collector costs telemetry, never availability. otel.serviceName is the api's
+# OTEL_SERVICE_NAME; the other components get <serviceName>-mcp, -a2a,
+# -projector and -reports. otel.enabled=false renders no OTEL_* env at all
+# (the binaries then fall back to localhost:4317). SERVICE_VERSION is
+# serviceVersion, or the image tag, or the chart appVersion when both are
+# empty; ENVIRONMENT is `environment` (deployment.environment.name).
+otel:
+  enabled: true
+  endpoint: "otel-collector.observability.svc.cluster.local:4317"
+  serviceName: "returns-processing"
+serviceVersion: ""
+environment: "production"
+
+# Extra env vars appended to the api container as a raw list. The chart-owned
+# names (SERVICE_VERSION, ENVIRONMENT, OTEL_SERVICE_NAME,
+# OTEL_EXPORTER_OTLP_ENDPOINT) are refused here and in every component's
+# extraEnv.
 extraEnv: []
 
 # The Postgres dial (migrations + ping) at boot is bounded-retried by

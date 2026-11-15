@@ -19,6 +19,10 @@ type ReportsServer struct {
 	// Now is the clock the default range ends at and the freshness lag is
 	// measured against (time.Now when nil).
 	Now func() time.Time
+	// Logger and ServiceName feed the observability middleware exactly like
+	// Server's (see observe).
+	Logger      *slog.Logger
+	ServiceName string
 }
 
 const dayLayout = "2006-01-02"
@@ -94,6 +98,7 @@ var (
 // (fleet rule), no CORS: the service is cluster-internal.
 func NewReportsRouter(s *ReportsServer) http.Handler {
 	r := chi.NewRouter()
+	observe(r, s.Logger, s.ServiceName)
 	r.Use(recoverPanic)
 	r.Get("/healthz", handleHealthz)
 	r.Get("/reports/disposition-mix", s.handleDispositionMix)

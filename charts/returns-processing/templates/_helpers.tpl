@@ -157,6 +157,45 @@ nothing reads.
 {{- end -}}
 
 {{/*
+The observability env every binary reads (ADR 0011; cmd/<binary>/telemetry.go and
+telemetry.Setup). Called with (dict "root" . "suffix" "-mcp"): the suffix makes
+the per-component OTEL_SERVICE_NAME (otel.serviceName for the api, then
+<serviceName>-mcp, -a2a, -projector, -reports), the same defaults the binaries
+carry. SERVICE_VERSION is serviceVersion, else the image tag, else the chart
+appVersion; ENVIRONMENT is `environment`. The OTEL_* pair is omitted while
+otel.enabled is false (the binaries then export to localhost:4317).
+*/}}
+{{- define "returns-processing.otelEnv" -}}
+{{- $root := .root -}}
+- name: SERVICE_VERSION
+  value: {{ $root.Values.serviceVersion | default $root.Values.image.tag | default $root.Chart.AppVersion | quote }}
+- name: ENVIRONMENT
+  value: {{ $root.Values.environment | quote }}
+{{- if $root.Values.otel.enabled }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ $root.Values.otel.endpoint | quote }}
+- name: OTEL_SERVICE_NAME
+  value: {{ printf "%s%s" $root.Values.otel.serviceName .suffix | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The names the chart renders itself from otel.*, environment and serviceVersion:
+refuse them through any extraEnv so a duplicate can never shadow the value.
+*/}}
+{{- define "returns-processing.requireNoOwnedEnv" -}}
+{{- $owned := list "ENVIRONMENT" "SERVICE_VERSION" "OTEL_SERVICE_NAME" "OTEL_EXPORTER_OTLP_ENDPOINT" -}}
+{{- $lists := dict "extraEnv" .Values.extraEnv "mcp.extraEnv" .Values.mcp.extraEnv "a2a.extraEnv" .Values.a2a.extraEnv "analytics.projector.extraEnv" .Values.analytics.projector.extraEnv "analytics.reports.extraEnv" .Values.analytics.reports.extraEnv -}}
+{{- range $where, $envs := $lists -}}
+{{- range $envs -}}
+{{- if has (toString .name) $owned -}}
+{{- fail (printf "%s sets %s — the chart renders it itself (otel.*, environment, serviceVersion, image.tag); set the value instead." $where .name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Fully qualified name of the optional mcp component. It is its own workload
 with its own app.kubernetes.io/component label; a Service never selects
 more than one component (tests/test_service_selectors.py).

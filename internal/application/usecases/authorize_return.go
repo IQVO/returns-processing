@@ -43,11 +43,27 @@ type AuthorizeReturn struct {
 	IDs        ports.IDGen
 	Clock      ports.Clock
 	UnitOfWork ports.UnitOfWork // nil = unwrapped
+	// Metrics counts every decision by outcome (nil = not counted).
+	Metrics ports.AuthorizationMetrics
 }
 
 // Execute authorizes the return and returns the decided RMA (AUTHORIZED,
-// version 1, ReturnAuthorized published in the same unit as the save).
+// version 1, ReturnAuthorized published in the same unit as the save). Every
+// decision is counted once through Metrics: authorized, or rejected with the
+// problem slug of the refusal as reason.
 func (uc *AuthorizeReturn) Execute(ctx context.Context, in ReturnRequest) (*returnauthorization.RMA, error) {
+	rma, err := uc.authorize(ctx, in)
+	if uc.Metrics != nil {
+		if err != nil {
+			uc.Metrics.ReturnRejected(ctx, AuthorizeRejectionReason(err))
+		} else {
+			uc.Metrics.ReturnAuthorized(ctx)
+		}
+	}
+	return rma, err
+}
+
+func (uc *AuthorizeReturn) authorize(ctx context.Context, in ReturnRequest) (*returnauthorization.RMA, error) {
 	policy, err := uc.Policies.Current(ctx)
 	if err != nil {
 		return nil, err

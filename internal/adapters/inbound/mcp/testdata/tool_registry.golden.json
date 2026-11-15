@@ -1,5 +1,8 @@
 [
   {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
     "annotations": {
       "idempotentHint": true,
       "openWorldHint": false,
@@ -76,6 +79,9 @@
     }
   },
   {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
     "annotations": {
       "idempotentHint": true,
       "openWorldHint": false,
@@ -152,6 +158,9 @@
     }
   },
   {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
     "annotations": {
       "idempotentHint": true,
       "openWorldHint": false,

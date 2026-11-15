@@ -85,3 +85,8 @@ rejection (`LINE_NOT_MANIFESTED`), never a guess and never a live call.
   are on the producers' `origin/develop` today; if a producer changes one,
   the weekly fleet drift sensor fires and this ADR and `apis/asyncapi.yaml`
   are fixed in a follow-up PR.
+
+## Addendum 2026-11-13: current state
+
+- `ItemStowed` is now on inventory-storage's integration topic `warehouse.inventory.events` (promoted 2026-10-21, inventory-storage ADR 0043; message `ItemStowed` in its `apis/asyncapi.yaml`), so "is not on its integration topic yet" above no longer holds.
+- This service still has no consumer for it: no code or spec in this repository mentions `ItemStowed` (only docs do), so a staged line's stow remains invisible here and the restock loop stays open.

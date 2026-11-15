@@ -58,6 +58,12 @@ func TestProcessedEventsContract(t *testing.T) {
 	})
 }
 
+func TestReturnAdvicesContract(t *testing.T) {
+	repocontract.ReturnAdvices(t, func(t *testing.T) repocontract.ReturnAdviceStore {
+		return postgres.NewReturnAdvices(pgtest.NewPool(t))
+	})
+}
+
 func TestAllocatedLinesContract(t *testing.T) {
 	repocontract.AllocatedLines(t, func(t *testing.T) repocontract.AllocatedLinesSeeds {
 		return &pgAllocated{postgres.NewAllocatedLines(pgtest.NewPool(t))}

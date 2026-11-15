@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded in part by [ADR 0011](0011-adopt-the-fleet-observability-standard.md) (the service now exports runtime metrics over OTLP; `GET /metrics` stays undeclared).
+
 Accepted (2026-11-01). Breaking by design: it ships with the fleet's REST cutover set and is deployed
 together with it.
 

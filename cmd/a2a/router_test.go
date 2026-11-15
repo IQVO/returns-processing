@@ -56,7 +56,7 @@ func newTestAgent(t *testing.T) (http.Handler, string) {
 		ListByOrder: &usecases.ListReturnsByOrder{RMAs: rmas},
 		GetPolicy:   &usecases.GetDispositionPolicy{Policies: policies},
 	}
-	return newAgent(deps, testAgentURL, "test"), rma.ID()
+	return newAgent(deps, testAgentURL, "test", nil, "returns-processing-a2a"), rma.ID()
 }
 
 func TestRouter_HealthzServesOK(t *testing.T) {

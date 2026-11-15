@@ -68,9 +68,9 @@ durable effect.
   carry no `quantity`; until that additive producer change lands, the
   authorized quantity is capped by `DispositionPolicy.max_units_per_line`
   only (dashed edge above, ADR 0001/0003).
-- **Restock loop closure**: inventory-storage's `ItemStowed` is not on its
-  integration topic yet; when promoted, this service can consume it to see a
-  staged line reach a bin (dashed edge above).
+- **Restock loop closure**: inventory-storage's `ItemStowed` is on its
+  integration topic (its ADR 0043); this service has no consumer for it yet, so
+  it cannot see a staged line reach a bin (dashed edge above).
 - Excluded from v1 by ADR 0001: carrier label / pickup booking, refund or
   credit issuing, refurbishment work orders, any write to `StockUnit` or
   `Bin`.

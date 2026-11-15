@@ -25,6 +25,10 @@
 //	MIGRATIONS_DATABASE_URL  direct DSN for the boot migrations (default DATABASE_URL)
 //	A2A_ADDR                 listen address (default :8093)
 //	LOG_LEVEL                debug | info | warn | error (default info)
+//	OTEL_SERVICE_NAME        service.name of spans and metrics (default returns-processing-a2a)
+//	OTEL_EXPORTER_OTLP_ENDPOINTCollector OTLP/gRPC endpoint (default localhost:4317)
+//	SERVICE_VERSION          service.version (default dev)
+//	ENVIRONMENT              deployment.environment.name (default local)
 package main
 
 import (
@@ -42,6 +46,7 @@ import (
 
 	inbounda2a "github.com/claudioed/returns-processing/internal/adapters/inbound/a2a"
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/postgres"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/telemetry"
 	"github.com/claudioed/returns-processing/internal/application/usecases"
 )
 
@@ -121,6 +126,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	// Telemetry comes up before the router is built: otelchimetric binds the
+	// global MeterProvider on construction.
+	telCfg := loadTelemetryEnv(os.Getenv)
+	flushTelemetry, err := startTelemetry(logger, telCfg)
+	if err != nil {
+		return err
+	}
+	defer flushTelemetry()
+
 	deps, closeAdapters, err := buildDeps(context.Background(), logger, cfg.databaseURL,
 		getenv(postgres.EnvMigrationsDatabaseURL, cfg.databaseURL))
 	if err != nil {
@@ -130,7 +145,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              getenv("A2A_ADDR", ":8093"),
-		Handler:           newAgent(deps, cfg.agentURL, agentVersion),
+		Handler:           newAgent(deps, cfg.agentURL, agentVersion, logger, telCfg.serviceName),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return serveA2A(logger, srv)
@@ -205,6 +220,8 @@ func serveA2A(logger *slog.Logger, srv *http.Server) error {
 // newLogger builds the process-wide JSON logger. LOG_LEVEL maps
 // debug|info|warn|warning|error (case-insensitive; "warning" is accepted
 // like "warn" fleet-wide), defaulting to Info.
+// The handler is wrapped so a record written with a span-carrying context (the
+// *Context slog variants) also carries trace_id and span_id.
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(level) {
@@ -217,7 +234,7 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lvl = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
+	return slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})))
 }
 
 func getenv(key, fallback string) string {

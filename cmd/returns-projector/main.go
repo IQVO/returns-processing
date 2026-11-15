@@ -20,12 +20,20 @@
 //	ANALYTICS_CONSUMER_GROUP  REQUIRED. The projector's fixed consumer group
 //	ADMIN_ADDR                /healthz and /readyz listen address (default :8091)
 //	LOG_LEVEL                 debug | info | warn (or warning) | error (default info)
+//	OTEL_SERVICE_NAME         service.name of spans and metrics (default returns-projector)
+//	OTEL_EXPORTER_OTLP_ENDPOINTCollector OTLP/gRPC endpoint (default localhost:4317)
+//	SERVICE_VERSION           service.version (default dev)
+//	ENVIRONMENT               deployment.environment.name (default local)
+//
+// The projector serves no REST API: it gets telemetry.Setup (traces and runtime
+// metrics over OTLP) and trace-correlated logs, not the HTTP request middleware.
 package main
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,6 +48,7 @@ import (
 	inboundkafka "github.com/claudioed/returns-processing/internal/adapters/inbound/kafka"
 	"github.com/claudioed/returns-processing/internal/adapters/outbound/analyticsstore"
 	outboundkafka "github.com/claudioed/returns-processing/internal/adapters/outbound/kafka"
+	"github.com/claudioed/returns-processing/internal/adapters/outbound/telemetry"
 )
 
 // shutdownTimeout bounds the admin server drain and the wait for the consumer
@@ -111,6 +120,12 @@ func run() error {
 	}
 	logger := newLogger(cfg.logLevel)
 	slog.SetDefault(logger)
+
+	flushTelemetry, err := startTelemetry(logger, loadTelemetryEnv(os.Getenv))
+	if err != nil {
+		return err
+	}
+	defer flushTelemetry()
 
 	pool, err := openAnalyticsPool(context.Background(), logger, cfg.analyticsURL)
 	if err != nil {
@@ -230,7 +245,11 @@ func openAnalyticsPool(ctx context.Context, logger *slog.Logger, url string) (*p
 	return pool, nil
 }
 
-func newLogger(level string) *slog.Logger {
+// newLogger builds the JSON logger on stdout; the handler is wrapped so a record
+// written with a span-carrying context also carries trace_id and span_id.
+func newLogger(level string) *slog.Logger { return newLoggerTo(os.Stdout, level) }
+
+func newLoggerTo(w io.Writer, level string) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -242,5 +261,5 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lvl = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
+	return slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: lvl})))
 }

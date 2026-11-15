@@ -22,10 +22,15 @@ by default**), so an agent host can answer questions about returns without touch
 
 ## Tools
 
-Every tool is annotated read-only, idempotent and closed-world. `TestToolSurface`
+Every tool is annotated read-only, idempotent and closed-world, and declares
+its authority level (Agentic Standard v2, AS-1): the whole surface is pure
+reads of this context's own state, so every tool is **L1**, carried in
+`_meta` under `com.warehouse/authority` and returned verbatim by
+`tools/list`. `TestToolSurface`
 (`internal/adapters/inbound/mcp/governance_test.go`) fails the build on any write-verb tool name,
 and the exact registry is pinned by a golden file
-(`internal/adapters/inbound/mcp/testdata/tool_registry.golden.json`).
+(`internal/adapters/inbound/mcp/testdata/tool_registry.golden.json`) that now
+carries the authority column (`_meta`).
 
 ### `get_return`
 
@@ -59,6 +64,27 @@ the rule table mapping each inspection grade (A, B, C, SCRAP) and product class 
 
 A handler error becomes an `isError` tool result carrying the error text — never a transport
 failure.
+
+## Beyond tools (Agentic Standard v2, [ADR 0010](/docs/adr/0010-agent-authority-levels-and-complete-mcp-surface))
+
+- **Stateless transport (AS-4).** The Streamable HTTP handler is built with
+  `Stateless: true`: no `Mcp-Session-Id` is issued, the server answers the
+  2026-07-28 revision's per-request handshake (`server/discover`) and a legacy
+  `initialize` still answers 200. Pinned by raw-POST tests
+  (`internal/adapters/inbound/mcp/stateless_test.go`).
+- **Resource (AS-3).** `warehouse://returns-processing/returns/{rmaId}` —
+  the return read model of ONE RMA (`application/json`), the same
+  `GetReturn` use case as `get_return` and the REST GET. A scoped read model,
+  never a table dump; a malformed URI or an unknown id is an error.
+- **Prompt (AS-3).** `triage_return` — this context's operator SOP: read
+  where the RMA stands, the order's other returns, and which disposition
+  policy applies; escalate overrides to a human. One typed, required argument
+  (`rmaId`); it names tools and never calls them.
+- **Enforcement.** The fleet's static sensor
+  `internal/architecture/mcp_authority_fitness_test.go` fails the build when
+  a tool misses its authority declaration, when the level contradicts the
+  read/write annotations, or when the server offers tools but no resource and
+  no prompt.
 
 ## Example call
 
