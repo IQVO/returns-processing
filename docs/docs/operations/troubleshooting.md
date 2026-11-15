@@ -42,7 +42,7 @@ sidebar_position: 4
 | Grade A answered `DISPOSE`, not `RESTOCK` | a guardrail demoted it: the SKU is DISPOSE-classified, or hazmat without a DOT rating | that is fail-closed by design (ADR 0002); check `get_disposition_policy` and the SKU's classification |
 | RESTOCK for grade C | impossible from `Decide` | an operator override did it — check the disposition's `supersedes`/`reason` |
 | `409 line-already-inspected` | a line is graded exactly once | correct the DECISION with an override, never a re-inspection |
-| `422 override-reason-required` | the reason field is mandatory (1–500 chars) | send it; the override explains itself |
+| `400 override-reason-required` | the reason field is mandatory and must not be blank (there is no maximum length) | send it; the override explains itself |
 | Two dispositions, one line | the second carries `supersedes` = the first | the ORIGINAL is immutable — audit trail, not a bug |
 
 ## REST problem types
@@ -57,9 +57,9 @@ All errors are RFC 7807 with
 | `idempotency-key-required` | every write (4 POSTs + the policy PUT) needs an `Idempotency-Key` header |
 | `idempotency-key-reused` (`409`) | the same key was sent with a DIFFERENT method, path or body — one key per logical request |
 | `rma-not-found` / `receipt-not-found` / `disposition-not-found` / `policy-not-found` | unknown id (or no policy declared yet) |
-| `return-not-authorizable` | rejection code in the body: `LINE_NOT_MANIFESTED`, `RETURN_WINDOW_EXPIRED`, `OPEN_RMA_EXISTS`, `QUANTITY_EXCEEDS_POLICY` |
+| `return-not-authorizable` (`409`) | rejection code at the start of the `detail`: `LINE_NOT_MANIFESTED`, `RETURN_WINDOW_EXPIRED`, `QUANTITY_EXCEEDS_POLICY` or `ORDER_LINE_NOT_ALLOCATED` (the line is not in the allocations copy; fail-closed). An open RMA is the separate slug `open-rma-exists` |
 | `open-rma-exists` | one open RMA per (order, line); the existing one must close first |
-| `rma-not-receivable` | a receipt was opened against an RMA that is not in AUTHORIZED state |
+| `rma-not-receivable` | in the problem catalogue (`errors.go:74,117-119`) but not answered today: `OpenReturnReceipt` never looks the RMA up and moves no RMA (`apis/openapi.yaml`, operation `openReturnReceipt`), so opening a receipt against any `rmaId` is accepted |
 | `line-already-inspected` / `inspected-exceeds-received` | grading rules (ADR 0002) |
 | `override-reason-required` | an override must explain itself |
 | `concurrent-modification` | optimistic version guard lost — reload, re-apply |

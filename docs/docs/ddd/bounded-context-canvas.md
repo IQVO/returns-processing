@@ -152,7 +152,7 @@ window, unexpected return, staged line, local copy.
 | --- | --- |
 | Coverage gate 90 % on `internal/domain` + `internal/application` | `make coverage`, CI `test` job |
 | Mutation thresholds 95/95 on every domain package (measured 100/100) | `.gremlins.yaml`, `mutation-fast` CI job |
-| 15 BDD scenarios: RMA → receipt → inspect → disposition → staged, and the unexpected path | `features/*.feature` |
+| 127 executed BDD scenarios (109 definitions in 15 files): RMA → receipt → inspect → disposition → staged, the unexpected path, the documented rules | `features/*.feature` |
 | Golden exact-JSON per published type | `internal/adapters/outbound/kafka/testdata/` |
 | Catalogue fitness: every AsyncAPI type has an ADR 0004 line | `internal/architecture/catalogue_fitness_test.go` |
 | Hexagonal fitness: no memory adapters in `cmd/**`, no auth, no flat envelope, relay attempt cap | `internal/architecture/*` |
