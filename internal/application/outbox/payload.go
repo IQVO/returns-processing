@@ -157,7 +157,7 @@ func DispositionPayload(e disposition.Event) ([]byte, error) {
 			keyQuantity:      ev.Quantity,
 			"condition":      ev.Condition,
 			"received_at":    ev.ReceivedAt.Format(time.RFC3339),
-			keyRMAID:         ev.RMAID,
+			keyRMAID:         nullable(ev.RMAID),
 			"disposition_id": ev.Disposition,
 			keySiteID:        ev.SiteID,
 		})

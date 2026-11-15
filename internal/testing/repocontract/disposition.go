@@ -98,7 +98,7 @@ func DispositionPolicyRepo(t *testing.T, newRepo func(t *testing.T) ports.Dispos
 		"an empty store has no current policy":      policyEmpty,
 		"save marks the version current":            policyCurrent,
 		"a new version appends and becomes current": policyAppend,
-		"a re-declared version replaces its row":    policyRedeclare,
+		"a re-declared version is refused":          policyRedeclare,
 		"every declared version stays readable":     policyHistory,
 	})
 }
@@ -148,8 +148,11 @@ func policyAppend(t *testing.T, r ports.DispositionPolicyRepo) {
 	}
 }
 
+// The policy is append-only (ADR 0002): declaring a version that exists is
+// refused, the stored row is untouched and the current pointer does not move.
 func policyRedeclare(t *testing.T, r ports.DispositionPolicyRepo) {
 	must(t, r.Save(bg, Declared(t, 1)))
+	must(t, r.Save(bg, Declared(t, 2)))
 	v1b, err := disposition.Declare(disposition.PolicyInput{
 		Version: 1, ReturnWindowDays: 60, MaxUnitsPerLine: 7,
 		Rules: []disposition.Rule{
@@ -161,11 +164,17 @@ func policyRedeclare(t *testing.T, r ports.DispositionPolicyRepo) {
 		DeclaredAt: T0.Add(2 * time.Hour),
 	})
 	must(t, err)
-	must(t, r.Save(bg, v1b))
+	wantErr(t, r.Save(bg, v1b), disposition.ErrPolicyVersionExists)
+	wantErr(t, r.Save(bg, Declared(t, 2)), disposition.ErrPolicyVersionExists)
+	old, err := r.FindByVersion(bg, 1)
+	must(t, err)
+	if old.ReturnWindowDays() != 30 || old.MaxUnitsPerLine() != 5 {
+		t.Fatalf("v1 was rewritten: %+v", old.Snapshot())
+	}
 	cur, err := r.Current(bg)
 	must(t, err)
-	if cur.Version() != 1 || cur.ReturnWindowDays() != 60 {
-		t.Fatalf("re-declared v1 = %+v", cur.Snapshot())
+	if cur.Version() != 2 {
+		t.Fatalf("a refused declaration moved current to v%d, want v2", cur.Version())
 	}
 }
 

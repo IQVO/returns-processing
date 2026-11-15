@@ -130,19 +130,67 @@ func TestRestockGuardrailDemotesLowGrades(t *testing.T) {
 	}
 }
 
-// The invariant: never RESTOCK for a DISPOSE-forced SKU — the forced outcome
-// wins over even an all-RESTOCK table, for every grade.
-func TestRestockGuardrailForcedOutcomeWins(t *testing.T) {
-	hostile, err := Declare(allRestock(1, ""))
-	if err != nil {
-		t.Fatalf("Declare hostile: %v", err)
-	}
+// The invariant: never RESTOCK for a DISPOSE-classified SKU (ADR 0002,
+// invariant 2). It is a RESTOCK guardrail like the grade ceiling: a RESTOCK
+// the table returns is demoted to the policy's vetoOutcome, every grade; where
+// the table does not say RESTOCK the table's outcome stands.
+func TestRestockGuardrailDisposeClassifiedFallsToVeto(t *testing.T) {
 	forced := Classification{ProductClass: "Standard", Classified: true, Forces: OutcomeDispose}
-	for _, g := range shared.Grades {
-		out, err := Decide(g, forced, hostile)
-		if err != nil || out != OutcomeDispose {
-			t.Fatalf("forced DISPOSE grade %s = %v/%v", g, out, err)
+	for _, veto := range []Outcome{OutcomeDispose, OutcomeRTV, OutcomeLiquidate} {
+		hostile, err := Declare(allRestock(1, veto))
+		if err != nil {
+			t.Fatalf("Declare hostile: %v", err)
 		}
+		for _, g := range shared.Grades {
+			out, err := Decide(g, forced, hostile)
+			if err != nil || out != veto {
+				t.Fatalf("force:DISPOSE veto %s grade %s = %v/%v, want the veto outcome", veto, g, out, err)
+			}
+		}
+	}
+	// the table does not restock grade C: force:DISPOSE changes nothing
+	mixed, err := Declare(PolicyInput{
+		Version: 2, ReturnWindowDays: 30, MaxUnitsPerLine: 10, VetoOutcome: OutcomeRTV,
+		Rules: []Rule{
+			{Grade: shared.GradeA, ProductClass: AnyProductClass, Outcome: OutcomeRestock},
+			{Grade: shared.GradeB, ProductClass: AnyProductClass, Outcome: OutcomeRefurbish},
+			{Grade: shared.GradeC, ProductClass: AnyProductClass, Outcome: OutcomeLiquidate},
+			{Grade: shared.GradeScrap, ProductClass: AnyProductClass, Outcome: OutcomeDispose},
+		},
+		DeclaredAt: declaredAt,
+	})
+	if err != nil {
+		t.Fatalf("Declare mixed: %v", err)
+	}
+	want := map[shared.Grade]Outcome{shared.GradeA: OutcomeRTV, shared.GradeB: OutcomeRefurbish, shared.GradeC: OutcomeLiquidate, shared.GradeScrap: OutcomeDispose}
+	for g, w := range want {
+		if out, err := Decide(g, forced, mixed); err != nil || out != w {
+			t.Fatalf("force:DISPOSE mixed table grade %s = %v/%v, want %s", g, out, err, w)
+		}
+	}
+}
+
+// Any other forced outcome still overrides the table; a forced RESTOCK is
+// still a RESTOCK and meets the same guardrails.
+func TestForcedOutcomeOverridesTableExceptDispose(t *testing.T) {
+	p, err := Declare(allRestock(1, OutcomeRTV))
+	if err != nil {
+		t.Fatalf("Declare: %v", err)
+	}
+	for _, o := range []Outcome{OutcomeRTV, OutcomeLiquidate, OutcomeRefurbish} {
+		c := Classification{ProductClass: "Standard", Classified: true, Forces: o}
+		for _, g := range shared.Grades {
+			if out, err := Decide(g, c, p); err != nil || out != o {
+				t.Fatalf("force:%s grade %s = %v/%v", o, g, out, err)
+			}
+		}
+	}
+	c := Classification{ProductClass: "Standard", Classified: true, Forces: OutcomeRestock}
+	if out, _ := Decide(shared.GradeC, c, p); out != OutcomeRTV {
+		t.Fatalf("force:RESTOCK on grade C = %v, want the veto outcome RTV", out)
+	}
+	if out, _ := Decide(shared.GradeA, c, p); out != OutcomeRestock {
+		t.Fatalf("force:RESTOCK on grade A = %v, want RESTOCK", out)
 	}
 }
 

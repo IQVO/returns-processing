@@ -41,15 +41,15 @@ Feature: Declare the disposition policy (documentation-derived)
     Then the rma status is AUTHORIZED
     And the rma window ends at 2026-10-21T09:00:00Z
 
-  # Spec: ADR 0002, aggregate-design-canvas.md and openapi all say the policy
-  # is APPEND-ONLY — "PUT declares version N once", "a change is a new
-  # version, never a rewrite". The memory double and the Postgres adapter
-  # both UPSERT a re-declared version (ON CONFLICT (version) DO UPDATE), so
-  # every decision that recorded policy_version 1 silently points at a
-  # different table. The docs do not name the refusal's status or slug, so
-  # only the invariant is pinned: the table of version 1 never changes.
-  @bdd @known-bug
+  # ADR 0002, aggregate-design-canvas.md and openapi: the policy is APPEND-ONLY
+  # ("PUT declares version N once", "a change is a new version, never a rewrite").
+  # Re-declaring a version is refused 409 policy-version-exists and the table of
+  # that version never changes, so a decision's recorded policy_version always
+  # names the table that made it.
+  @bdd
   Scenario: A declared policy version is never rewritten
     When a PUT request is sent to "/disposition-policies/1" with key "pol-rewrite" and the JSON body {"returnWindowDays":30,"maxUnitsPerLine":9,"rules":[{"grade":"A","productClass":"*","outcome":"RESTOCK"},{"grade":"B","productClass":"*","outcome":"REFURBISH"},{"grade":"C","productClass":"*","outcome":"LIQUIDATE"},{"grade":"SCRAP","productClass":"*","outcome":"DISPOSE"}]}
-    And a GET request is sent to "/disposition-policies/current"
+    Then the response status is 409
+    And the response problem is "policy-version-exists"
+    When a GET request is sent to "/disposition-policies/current"
     Then the response field "maxUnitsPerLine" is 5

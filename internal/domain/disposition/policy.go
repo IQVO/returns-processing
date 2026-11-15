@@ -162,8 +162,10 @@ type Classification struct {
 	DoTHazardClass int
 	// TemperatureClass is informational for the operator.
 	TemperatureClass string
-	// Forces is a mandatory outcome that overrides the table (e.g. DISPOSE
-	// for a never-restock SKU); "" when none.
+	// Forces is a mandatory outcome that overrides the table (force:<OUTCOME>
+	// tag), except DISPOSE, which marks a never-restock SKU: a RESTOCK
+	// guardrail that demotes a RESTOCK to the policy's veto outcome and leaves
+	// every other table outcome alone (ADR 0002, invariant 2); "" when none.
 	Forces Outcome
 	// Classified is false until ProductClassified arrives (fail-open for
 	// grading; the hazmat guardrail still applies once known).
@@ -174,13 +176,15 @@ type Classification struct {
 // (grade x classification x policy) — the same inputs always give the same
 // outcome, and every combination answers.
 //
-// Order of precedence:
+// Order of precedence (ADR 0002, invariant 2):
 //
-//  1. a forced outcome on the classification wins outright;
+//  1. a forced outcome on the classification overrides the table, except
+//     DISPOSE: a DISPOSE-classified SKU is a RESTOCK guardrail (step 3), not
+//     an outcome of its own, so the table still answers for it;
 //  2. the table's outcome for (grade, class), the "*" default otherwise;
-//  3. a RESTOCK the table returned is demoted to the policy's veto outcome
-//     when the grade is below B, or the SKU is hazmat without a DOT rating
-//     (fail-closed, ADR 0001).
+//  3. a RESTOCK (from the table, or forced) is demoted to the policy's veto
+//     outcome when the grade is below B, the SKU is DISPOSE-classified, or the
+//     SKU is hazmat without a DOT rating (fail-closed, ADR 0001).
 func Decide(g shared.Grade, c Classification, p *DispositionPolicy) (Outcome, error) {
 	if !g.Valid() {
 		return "", ErrInvalidGrade
@@ -188,15 +192,15 @@ func Decide(g shared.Grade, c Classification, p *DispositionPolicy) (Outcome, er
 	if p == nil {
 		return "", ErrNoPolicy
 	}
-	if c.Forces != "" {
-		if !c.Forces.Valid() {
-			return "", ErrInvalidForcedOutcome
-		}
-		return c.Forces, nil
+	if c.Forces != "" && !c.Forces.Valid() {
+		return "", ErrInvalidForcedOutcome
 	}
-	out, ok := p.ruleFor(g, c.ProductClass)
-	if !ok {
-		return "", ErrPolicyNotTotal
+	out := c.Forces
+	if out == "" || out == OutcomeDispose {
+		var ok bool
+		if out, ok = p.ruleFor(g, c.ProductClass); !ok {
+			return "", ErrPolicyNotTotal
+		}
 	}
 	if out == OutcomeRestock && restockVetoed(g, c) {
 		return p.vetoOutcome, nil
@@ -206,6 +210,9 @@ func Decide(g shared.Grade, c Classification, p *DispositionPolicy) (Outcome, er
 
 func restockVetoed(g shared.Grade, c Classification) bool {
 	if g != shared.GradeA && g != shared.GradeB {
+		return true
+	}
+	if c.Forces == OutcomeDispose {
 		return true
 	}
 	return c.Hazmat && c.DoTHazardClass <= 0

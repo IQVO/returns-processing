@@ -64,4 +64,7 @@ var (
 	ErrNotRestock = errors.New("disposition: only a restock stages a line")
 	// ErrAlreadyStaged: a RESTOCK disposition stages exactly once.
 	ErrAlreadyStaged = errors.New("disposition: line is already staged")
+	// ErrPolicyVersionExists: the policy is append-only, so a declared
+	// version is never declared again (a change is a new version).
+	ErrPolicyVersionExists = errors.New("disposition: policy version is already declared")
 )
