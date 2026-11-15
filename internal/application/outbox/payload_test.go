@@ -280,6 +280,23 @@ func TestDispositionPayloads(t *testing.T) {
 	}
 }
 
+// ReturnLineStaged for an UNEXPECTED line has no RMA: rma_id is an explicit
+// null on the wire, like every other rma_id of the catalogue, never "".
+func TestReturnLineStagedUnexpectedLineHasNullRMAID(t *testing.T) {
+	ev := staged()
+	ev.RMAID = ""
+	name, data := dispositionData(t, ev)
+	if name != "ReturnLineStaged" {
+		t.Fatalf("type = %q", name)
+	}
+	if v, has := data["rma_id"]; !has || v != nil {
+		t.Fatalf("rma_id = %#v (present=%v), want explicit null", v, has)
+	}
+	if data["disposition_id"] != "disp-1" || data["site_id"] != "site-1" {
+		t.Fatalf("data = %v", data)
+	}
+}
+
 // An event the service does not publish is a programming error: the payload
 // build fails and nothing is written.
 func TestUnknownEventsFail(t *testing.T) {

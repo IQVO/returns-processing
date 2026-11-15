@@ -158,3 +158,9 @@ fulfillment-execution's `order_ref`).
   one transaction: it is the state an RMA is born in inside that
   transaction, and a future async decision path (carrier integration) would
   reuse it without a breaking change.
+
+## Addendum 2026-11-15: receipt, policy versions and forced outcomes as shipped
+
+- **A receipt does not move the RMA.** The ReturnReceipt section says a receipt is opened "against an RMA (whose state moves AUTHORIZED -> RECEIVED by the use case)". In v1 it does not: `OpenReturnReceipt` takes the RMA id on the line as a fact, looks nothing up and moves nothing, so the RMA stays `AUTHORIZED` at version 1 and a second authorization for its line is still `open-rma-exists`. The domain keeps the transition (`MarkReceived`) but no use case calls it, and nothing moves an RMA to `RECEIVED` or `CLOSED` today (`apis/openapi.yaml`, `OpenReturnReceipt` and `RmaStatus`; `docs/docs/ddd/aggregate-design-canvas.md`). This addendum supersedes the parenthesis; the state machine above is unchanged.
+- **A policy version is declared once.** "Append-only" now has its refusal: `PUT /disposition-policies/{version}` for a version that exists is 409 `policy-version-exists` and changes nothing, neither that row nor which version is current. The primary key on `disposition_policies(version)` decides, so two concurrent declarations of one version cannot both win; no migration was needed. A table that needs a change is declared as a new version.
+- **`force:DISPOSE` is a RESTOCK guardrail.** Invariant 2 lists a DISPOSE-classified SKU among the conditions under which "a RESTOCK the table returns ... is demoted to the policy's `vetoOutcome`". `Decide` now does exactly that: a `force:DISPOSE` classification no longer returns DISPOSE outright; the table answers, and only a RESTOCK is demoted (to the veto outcome, DISPOSE by default). Any other `force:<OUTCOME>` still overrides the table; a forced RESTOCK is still a RESTOCK and meets the same guardrails.

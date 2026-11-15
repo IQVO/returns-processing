@@ -48,7 +48,8 @@ unpaginated (`x-pagination-exempt`).
   `cursor`; the answer is `{items, nextCursor}` and `nextCursor` is absent on the last page. A bad
   `limit` is `400 invalid-limit`, an undecodable `cursor` `400 invalid-cursor`.
 - **Versions.** Aggregate `version` guards every write: a lost update is
-  `409 concurrent-modification`. The policy is append-only by `version` path segment; an RMA move
+  `409 concurrent-modification`. The policy is append-only by `version` path segment (a version that
+  exists is `409 policy-version-exists`); an RMA move
   and a receipt write bump their aggregates' versions.
 - **Errors** are RFC 7807 `application/problem+json` with
   `type = https://errors.returns-processing.warehouse-systems.dev/<slug>`. The slugs:
@@ -56,7 +57,7 @@ unpaginated (`x-pagination-exempt`).
   `idempotency-key-required`, `idempotency-key-invalid`, `idempotency-key-reused`, `invalid-limit`, `invalid-cursor`, `rma-not-found`, `receipt-not-found`,
   `disposition-not-found`, `policy-not-found`, `return-not-authorizable`, `open-rma-exists`,
   `rma-not-receivable`, `line-already-inspected`, `inspected-exceeds-received`,
-  `override-reason-required`, `concurrent-modification`, `dependency-unavailable`,
+  `override-reason-required`, `concurrent-modification`, `policy-version-exists`, `dependency-unavailable`,
   `internal-error`. Causes and fixes are on
   [Troubleshooting](/docs/operations/troubleshooting#rest-problem-types).
 - **Auth**: none (`TestNoAuthMiddlewareReintroduced` fails CI if auth middleware returns). No CORS
