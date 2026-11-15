@@ -35,6 +35,44 @@ func TestDeclareDispositionPolicy_Happy(t *testing.T) {
 	}
 }
 
+// TestDeclareDispositionPolicy_VersionIsAppendOnly: a declared version is
+// declared once (ADR 0002). A second declaration of it, whatever the table,
+// is ErrPolicyVersionExists and leaves both the stored version and the
+// current pointer as they were.
+func TestDeclareDispositionPolicy_VersionIsAppendOnly(t *testing.T) {
+	f := newFixture(t)
+	uc := &usecases.DeclareDispositionPolicy{Policies: f.policies, Clock: f.clock()}
+	rules := func(restock shared.Grade) []disposition.Rule {
+		out := []disposition.Rule{}
+		for _, g := range shared.Grades {
+			o := disposition.OutcomeDispose
+			if g == restock {
+				o = disposition.OutcomeRestock
+			}
+			out = append(out, disposition.Rule{Grade: g, ProductClass: "*", Outcome: o})
+		}
+		return out
+	}
+	ctx := context.Background()
+	if _, err := uc.Execute(ctx, usecases.PolicyDeclaration{Version: 1, ReturnWindowDays: 30, MaxUnitsPerLine: 5, Rules: rules(shared.GradeA)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := uc.Execute(ctx, usecases.PolicyDeclaration{Version: 2, ReturnWindowDays: 30, MaxUnitsPerLine: 5, Rules: rules(shared.GradeB)}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := uc.Execute(ctx, usecases.PolicyDeclaration{Version: 1, ReturnWindowDays: 1, MaxUnitsPerLine: 9, Rules: rules(shared.GradeB)})
+	if !errors.Is(err, disposition.ErrPolicyVersionExists) {
+		t.Fatalf("re-declaring v1 = %v, want ErrPolicyVersionExists", err)
+	}
+	v1, err := f.policies.FindByVersion(ctx, 1)
+	if err != nil || v1.ReturnWindowDays() != 30 || v1.MaxUnitsPerLine() != 5 {
+		t.Fatalf("v1 was rewritten: err=%v %+v", err, v1)
+	}
+	if cur, err := f.policies.Current(ctx); err != nil || cur.Version() != 2 {
+		t.Fatalf("current moved: err=%v %+v", err, cur)
+	}
+}
+
 // TestDeclareDispositionPolicy_Refusals names the domain's declaration
 // errors (the table must be total, unique and five-outcome-valid).
 func TestDeclareDispositionPolicy_Refusals(t *testing.T) {

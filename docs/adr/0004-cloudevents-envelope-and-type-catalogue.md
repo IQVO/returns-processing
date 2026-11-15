@@ -99,3 +99,7 @@ CloudEvent is logged and skipped, never retried forever.
 
 - The analytics mirror is built, by [ADR 0007](0007-analytics-read-side.md): all seven types below are also written to `warehouse.returns-processing.analytics` with the same `type` and `id` and `dataschema` `urn:warehouse:returns-processing:analytics:<EventName>:v1` (`TopicAnalytics` in `internal/adapters/outbound/kafka/encoder.go`; the seven `*Analytics` messages in `apis/asyncapi.yaml`). Read "events (analytics planned)" in the table as "events and analytics".
 - Only `cmd/returns-projector` consumes the analytics topic (`apis/asyncapi.yaml`, channel `warehouse.returns-processing.analytics`); the Status line above already records the amendment.
+
+## Addendum 2026-11-15: ReturnLineStaged `rma_id` is nullable
+
+The `ReturnLineStaged` row of the catalogue lists `rma_id` as a plain field. A RESTOCK disposition of an UNEXPECTED receipt line has no RMA, and the event used to carry `""` for it, the only `rma_id` that can be absent and was not an explicit `null` (`internal/application/outbox/payload.go`, `nullable`). It now carries `null`, like `ReturnReceiptOpened.rma_id` and `lines[].rma_id` above; a matched line is unchanged. The producer contract is `apis/asyncapi.yaml` (`ReturnLineStagedEvent`). inventory-storage decodes the field into a string and only logs it (ADR 0044 there), so a `null` reads as an empty string.

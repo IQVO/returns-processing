@@ -42,8 +42,9 @@ type ManifestedUnit struct {
 //	class:<name>   the policy-table product class, e.g. "class:Hazmat"
 //	hazmat         the SKU needs hazmat handling
 //	dot:<n>        the DOT hazard class rating, e.g. "dot:3" (0 = none)
-//	force:<OUTCOME> a mandatory outcome that overrides the table, e.g.
-//	               "force:DISPOSE" for a never-restock SKU
+//	force:<OUTCOME> a mandatory outcome that overrides the table, except
+//	               "force:DISPOSE": a never-restock SKU, a RESTOCK guardrail
+//	               (a RESTOCK falls to the policy's veto outcome, ADR 0002)
 type ProductClass struct {
 	Tags             []string
 	TemperatureClass string

@@ -39,7 +39,7 @@ sidebar_position: 4
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Grade A answered `DISPOSE`, not `RESTOCK` | a guardrail demoted it: the SKU is DISPOSE-classified, or hazmat without a DOT rating | that is fail-closed by design (ADR 0002); check `get_disposition_policy` and the SKU's classification |
+| Grade A answered something other than `RESTOCK` (`DISPOSE` unless the policy's `vetoOutcome` says otherwise) | a guardrail demoted a RESTOCK to the veto outcome: the SKU is DISPOSE-classified (`force:DISPOSE`), or hazmat without a DOT rating | that is fail-closed by design (ADR 0002); check `get_disposition_policy` and the SKU's classification |
 | RESTOCK for grade C | impossible from `Decide` | an operator override did it — check the disposition's `supersedes`/`reason` |
 | `409 line-already-inspected` | a line is graded exactly once | correct the DECISION with an override, never a re-inspection |
 | `400 override-reason-required` | the reason field is mandatory and must not be blank (there is no maximum length) | send it; the override explains itself |
@@ -63,6 +63,7 @@ All errors are RFC 7807 with
 | `line-already-inspected` / `inspected-exceeds-received` | grading rules (ADR 0002) |
 | `override-reason-required` | an override must explain itself |
 | `concurrent-modification` | optimistic version guard lost — reload, re-apply |
+| `policy-version-exists` (`409`) | `PUT /disposition-policies/{version}` for a version that is already declared; the policy is append-only and nothing changed — declare the table as a NEW version |
 | `dependency-unavailable` | Postgres or Kafka unreachable behind `503 /readyz` — not a client error |
 | `internal-error` | anything unexpected; the log line carries the cause |
 

@@ -42,7 +42,7 @@ aggregate stay ordered on one partition. Everything leaves through the transacti
 | UnexpectedReturnReceived | `receipt_id`, `line_no`, `sku`, `quantity`, `site_id`, `received_at` |
 | ReturnLineInspected | `receipt_id`, `line_no`, `sku`, `quantity`, `grade` (`A`/`B`/`C`/`SCRAP`), `reason_codes:[]`, `inspected_at` |
 | DispositionDecided | `disposition_id`, `receipt_id`, `line_no`, `sku`, `quantity`, `grade`, `outcome` (`RESTOCK`/`REFURBISH`/`LIQUIDATE`/`DISPOSE`/`RTV`), `policy_version`, `supersedes` (nullable), `reason` (nullable), `decided_at` |
-| ReturnLineStaged | `receipt_id`, `line_no`, `sku`, `quantity`, `condition` (`"Good"`), `received_at`, `rma_id`, `disposition_id`, `site_id` |
+| ReturnLineStaged | `receipt_id`, `line_no`, `sku`, `quantity`, `condition` (`"Good"`), `received_at`, `rma_id` (nullable), `disposition_id`, `site_id` |
 
 Publisher-path note: `ReturnAuthorizationRejected` is raised by the domain's `Reject` and sits in
 the catalogue (ADR 0004), but **no v1 code path publishes it**: `AuthorizeReturn` decides
@@ -52,7 +52,9 @@ persisted, nothing is published. The event gains a publisher with a future async
 
 Payload rules: `ReturnLineStaged.data` is inbound-receiving's `ReceiptLineReceived` shape plus
 `rma_id`, `disposition_id`, `site_id` — inventory-storage consumes it into its staged-receipt use
-case (its ADR 0044), and `disposition_id` is the downstream idempotency key.
+case (its ADR 0044), and `disposition_id` is the downstream idempotency key. `rma_id` is an
+explicit `null` when the restocked line was UNEXPECTED (no RMA), as everywhere else in the
+catalogue, never an empty string.
 `DispositionDecided.supersedes`/`reason` are null on a policy decision and mandatory on an
 override. A breaking payload change is a new `.v2` type and dataschema, never a mutation of v1.
 

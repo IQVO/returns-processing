@@ -26,11 +26,13 @@ func NewPolicies(pool *pgxpool.Pool) *Policies { return &Policies{pool: pool} }
 
 const policyColumns = `version, return_window_days, max_units_per_line, veto_outcome, rules, declared_at`
 
-// Save persists the policy version and marks it current, atomically: the
-// previous current row is cleared first (unless it is this very version
-// being re-declared), then the row is upserted with is_current set — a NEW
-// version appends, a re-declared version replaces its row, exactly the
-// memory double's semantics.
+// Save appends the policy version and marks it current, atomically. The
+// policy is append-only (ADR 0002): a version that is already declared is
+// refused with disposition.ErrPolicyVersionExists and nothing changes — the
+// primary key decides, so two concurrent declarations of one version cannot
+// both win. The new row is inserted not-current, then the previous current
+// row is cleared and the new one marked, so the one-current partial unique
+// index never sees two.
 func (r *Policies) Save(ctx context.Context, p *disposition.DispositionPolicy) error {
 	s := p.Snapshot()
 	rules, err := marshalRules(s.Rules)
@@ -38,6 +40,18 @@ func (r *Policies) Save(ctx context.Context, p *disposition.DispositionPolicy) e
 		return fmt.Errorf("save policy v%d: %w", s.Version, err)
 	}
 	return inTx(ctx, r.pool, func(q querier) error {
+		tag, err := q.Exec(ctx, `
+			INSERT INTO disposition_policies (`+policyColumns+`, is_current)
+			VALUES ($1, $2, $3, $4, $5, $6, false)
+			ON CONFLICT (version) DO NOTHING
+		`, s.Version, s.ReturnWindowDays, s.MaxUnitsPerLine, string(s.VetoOutcome),
+			rules, s.DeclaredAt.UTC())
+		if err != nil {
+			return fmt.Errorf("save policy v%d: %w", s.Version, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return disposition.ErrPolicyVersionExists
+		}
 		if _, err := q.Exec(ctx, `
 			UPDATE disposition_policies SET is_current = false
 			WHERE is_current AND version <> $1
@@ -45,18 +59,9 @@ func (r *Policies) Save(ctx context.Context, p *disposition.DispositionPolicy) e
 			return fmt.Errorf("clear current policy: %w", err)
 		}
 		if _, err := q.Exec(ctx, `
-			INSERT INTO disposition_policies (`+policyColumns+`, is_current)
-			VALUES ($1, $2, $3, $4, $5, $6, true)
-			ON CONFLICT (version) DO UPDATE
-			SET return_window_days = EXCLUDED.return_window_days,
-			    max_units_per_line = EXCLUDED.max_units_per_line,
-			    veto_outcome = EXCLUDED.veto_outcome,
-			    rules = EXCLUDED.rules,
-			    declared_at = EXCLUDED.declared_at,
-			    is_current = true
-		`, s.Version, s.ReturnWindowDays, s.MaxUnitsPerLine, string(s.VetoOutcome),
-			rules, s.DeclaredAt.UTC()); err != nil {
-			return fmt.Errorf("save policy v%d: %w", s.Version, err)
+			UPDATE disposition_policies SET is_current = true WHERE version = $1
+		`, s.Version); err != nil {
+			return fmt.Errorf("mark policy v%d current: %w", s.Version, err)
 		}
 		return nil
 	})
