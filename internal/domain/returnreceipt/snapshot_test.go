@@ -137,3 +137,21 @@ func TestRestore_Refuses(t *testing.T) {
 		}
 	}
 }
+
+// TestRestore_AcceptsTheLowerAndUpperEdges pins the boundaries the refusals
+// above stop at: a receipt with exactly one line, and a line inspected for
+// exactly the quantity that was received.
+func TestRestore_AcceptsTheLowerAndUpperEdges(t *testing.T) {
+	s := openedSnapshot(t, true)
+	s.Lines = s.Lines[:1]
+	s.Lines[0].InspectedQuantity = s.Lines[0].Quantity
+	got, err := Restore(s)
+	if err != nil {
+		t.Fatalf("one fully inspected line must restore: %v", err)
+	}
+	line, err := got.Line(1)
+	if err != nil || !line.Inspected() || line.InspectedQuantity() != s.Lines[0].Quantity {
+		t.Fatalf("line 1 = %+v, %v", line, err)
+	}
+	assertResnapshotEqual(t, got.Snapshot(), s, "single full line")
+}
