@@ -58,8 +58,9 @@ domain error (`ErrLineNotManifested`, `ErrWindowExpired`,
 `ErrOpenRMAExists`, `ErrQuantityExceedsPolicy`) mapped to its rejection
 code at the edge; nothing is persisted and nothing is published — the
 partial unique index `uq_rmas_one_open_per_order_line` backs the one-open
-rule against races. A line the allocations copy does not know is a 404
-(`ErrOrderLineNotAllocated`).
+rule against races. A line the allocations copy does not know is refused with
+`ErrOrderLineNotAllocated`, answered `409 return-not-authorizable` whose `detail` starts with
+`ORDER_LINE_NOT_ALLOCATED` (not a 404; `internal/adapters/inbound/http/errors.go:114,154`).
 
 ### 5. `OpenReturnReceipt` (`open_return_receipt.go`)
 
