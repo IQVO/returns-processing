@@ -500,6 +500,29 @@ jobs:
           done
           curl -fsS -o /dev/null -w 'remoteEntry.js -> %{http_code}\n' http://localhost:18410/remoteEntry.js
 
+  # Git-pinned producer contracts: every copy in contracts/pinned.json must
+  # byte-equal its producer's develop. The consumer contract tests (E1-E4,
+  # internal/adapters/inbound/kafka) validate against these copies, so a
+  # stale pin keeps them green while the producer moves on. Refresh = copy
+  # the producer's file over the pin, never edit it (ADR 0003; drift SLA:
+  # the consumer refreshes within 2 business days).
+  # ============================================================
+  # CLASSIFICATION: CONTRACT DRIFT GATE (pinned producers)
+  # ============================================================
+  pinned-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Pins equal the producer's develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/harness/pinned_contract_gate.py
+      - name: The gate's own tests
+        run: python3 scripts/harness/test_pinned_contract_gate.py
+
   # ============================================================
   # CLASSIFICATION: PUBLISH (Docker image) -- push-to-main only
   # ============================================================
