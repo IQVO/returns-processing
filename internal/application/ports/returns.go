@@ -29,6 +29,22 @@ var ErrOutcomeAlreadyStored = errors.New("ports: return outcome already stored")
 // timeout — is retried on the next drain.
 var ErrOutcomeRefused = errors.New("ports: return outcome refused")
 
+// OutcomeRefusal is what the error of a 4xx answer to an outcome submission
+// implements (ADR 0013; the adapter owns the type, this package only interfaces).
+// The adapter classifies the answer by its problem slug against the callee's
+// replay classes: Released is true when the callee RELEASED the refusal (nothing
+// committed, the Idempotency-Key is free, the same request under the same key may
+// pass later), false when it is a verdict. A verdict also matches ErrOutcomeRefused;
+// a released refusal does not, so a caller that knows nothing of the class treats it
+// like an answer it did not hear (retry), never like a verdict.
+type OutcomeRefusal interface {
+	error
+	// ProblemSlug is the problem type of the answer, "" when it had no problem document.
+	ProblemSlug() string
+	// Released reports whether the callee releases this refusal under the key.
+	Released() bool
+}
+
 // ReturnAdviceFeed is the write side of the ReturnAdviceView local read
 // model (ADR 0012): the poller upserts the network-owned facts; the receipt
 // completion hook stores the composed outcome and the drain records the
@@ -51,6 +67,12 @@ type ReturnAdviceFeed interface {
 	MarkOutcomeSucceeded(ctx context.Context, authorizationID string) error
 	// MarkOutcomeFailed records the network's refusal as terminal.
 	MarkOutcomeFailed(ctx context.Context, authorizationID string, refusal string) error
+	// NoteOutcomeRefusal records, for the operator, the last refusal the
+	// callee released while the outcome stays PENDING (ADR 0013). A PENDING
+	// outcome keeps its state and its place in the drain; a terminal or
+	// unsubmitted-never outcome is left unchanged. ErrAdviceUnknown when the
+	// advice was never seen. The next accepted submission clears the note.
+	NoteOutcomeRefusal(ctx context.Context, authorizationID string, refusal string) error
 }
 
 // ReturnAdviceViews is the read side of the ReturnAdviceView local read
