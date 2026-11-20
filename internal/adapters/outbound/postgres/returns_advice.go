@@ -100,7 +100,7 @@ func (m *ReturnAdvices) MarkOutcomePending(ctx context.Context, authorizationID 
 // MarkOutcomeSubmitted implements ports.ReturnAdviceFeed.
 func (m *ReturnAdvices) MarkOutcomeSubmitted(ctx context.Context, authorizationID, transactionID string) error {
 	tag, err := queryFor(ctx, m.pool).Exec(ctx, `
-		UPDATE return_advice_view SET outcome_state = 'SUBMITTED', outcome_transaction_id = $2
+		UPDATE return_advice_view SET outcome_state = 'SUBMITTED', outcome_transaction_id = $2, outcome_errors = ''
 		WHERE authorization_id = $1 AND outcome_state IN ('PENDING', 'SUBMITTED')
 	`, authorizationID, transactionID)
 	if err != nil {
@@ -136,6 +136,23 @@ func (m *ReturnAdvices) MarkOutcomeFailed(ctx context.Context, authorizationID, 
 	`, authorizationID, refusal)
 	if err != nil {
 		return fmt.Errorf("mark outcome failed %s: %w", authorizationID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return m.outcomeMiss(ctx, authorizationID)
+	}
+	return nil
+}
+
+// NoteOutcomeRefusal implements ports.ReturnAdviceFeed: the last refusal the callee
+// released, kept in outcome_errors while the outcome stays PENDING (the column FAILED
+// also fills; an accepted submission clears it). A terminal outcome is left unchanged.
+func (m *ReturnAdvices) NoteOutcomeRefusal(ctx context.Context, authorizationID, refusal string) error {
+	tag, err := queryFor(ctx, m.pool).Exec(ctx, `
+		UPDATE return_advice_view SET outcome_errors = $2
+		WHERE authorization_id = $1 AND outcome_state = 'PENDING'
+	`, authorizationID, refusal)
+	if err != nil {
+		return fmt.Errorf("note outcome refusal %s: %w", authorizationID, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return m.outcomeMiss(ctx, authorizationID)

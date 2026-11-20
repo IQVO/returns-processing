@@ -131,3 +131,23 @@ type drainHalf struct{ c *countingHalf }
 func (h drainHalf) Execute(ctx context.Context) (usecases.OutcomeDrainResult, error) {
 	return h.c.ExecuteDrain(ctx)
 }
+
+type releasedDrain struct{}
+
+func (releasedDrain) Execute(context.Context) (usecases.OutcomeDrainResult, error) {
+	return usecases.OutcomeDrainResult{Released: []usecases.ReleasedRefusal{{AuthorizationID: "ret-1", Slug: "not-found"}}}, nil
+}
+
+// A refusal the network released is logged with its slug for the operator (ADR 0013).
+func TestReturnsPollerLogsTheRefusalTheNetworkReleased(t *testing.T) {
+	var buf strings.Builder
+	p, _, _ := newTestPoller(nil)
+	p.drain = releasedDrain{}
+	p.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	p.tick(context.Background())
+	for _, want := range []string{"released", "authorization_id=ret-1", "refusal=not-found"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("log %q misses %q", buf.String(), want)
+		}
+	}
+}

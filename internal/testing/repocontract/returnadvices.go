@@ -53,13 +53,14 @@ type ReturnAdviceStore interface {
 func ReturnAdvices(t *testing.T, newStore func(t *testing.T) ReturnAdviceStore) {
 	t.Helper()
 	run(t, newStore, map[string]func(t *testing.T, s ReturnAdviceStore){
-		"an unseen advice reads as missing":                  adviceMiss,
-		"first sight persists the advice":                    adviceFirstSight,
-		"re-delivery refreshes facts, not outcomes":          adviceRedelivery,
-		"a pending outcome needs a seen advice":              advicePendingUnknown,
-		"an outcome is stored exactly once":                  advicePendingOnce,
-		"the drain lists pending and submitted oldest first": adviceDrain,
-		"the watermark is the latest readyAt":                adviceWatermark,
+		"an unseen advice reads as missing":                         adviceMiss,
+		"first sight persists the advice":                           adviceFirstSight,
+		"re-delivery refreshes facts, not outcomes":                 adviceRedelivery,
+		"a pending outcome needs a seen advice":                     advicePendingUnknown,
+		"an outcome is stored exactly once":                         advicePendingOnce,
+		"the drain lists pending and submitted oldest first":        adviceDrain,
+		"the watermark is the latest readyAt":                       adviceWatermark,
+		"a released refusal is noted and the outcome stays pending": adviceNoteRefusal,
 	})
 }
 
@@ -161,6 +162,36 @@ func adviceDrain(t *testing.T, s ReturnAdviceStore) {
 	got, _, _ := s.Get(ctx, "ret-3")
 	if got.OutcomeState != views.AdviceOutcomeFailed {
 		t.Fatalf("failed advice = %+v", got)
+	}
+}
+
+// adviceNoteRefusal: the drain notes the last refusal the callee released while the
+// outcome stays PENDING and listed; on a terminal outcome the note is a no-op; an
+// unseen advice is ErrAdviceUnknown.
+func adviceNoteRefusal(t *testing.T, s ReturnAdviceStore) {
+	ctx := context.Background()
+	for _, id := range []string{"ret-note-1", "ret-note-2"} {
+		must(t, s.ApplyReturnAdvice(ctx, fixtureAdvice(id)))
+		must(t, s.MarkOutcomePending(ctx, id, fixtureOutcome(id)))
+	}
+	must(t, s.NoteOutcomeRefusal(ctx, "ret-note-1", "released: not-found"))
+	must(t, s.NoteOutcomeRefusal(ctx, "ret-note-1", "released: concurrent-update")) // the last one replaces it
+	must(t, s.MarkOutcomeFailed(ctx, "ret-note-2", "refused"))
+	must(t, s.NoteOutcomeRefusal(ctx, "ret-note-2", "released: not-found")) // terminal: nothing changes
+	got, _, _ := s.Get(ctx, "ret-note-1")
+	if got.OutcomeState != views.AdviceOutcomePending {
+		t.Fatalf("noted outcome state = %q, want PENDING", got.OutcomeState)
+	}
+	got, _, _ = s.Get(ctx, "ret-note-2")
+	if got.OutcomeState != views.AdviceOutcomeFailed {
+		t.Fatalf("a note moved a terminal outcome to %q", got.OutcomeState)
+	}
+	pending, err := s.PendingOutcomes(ctx)
+	if err != nil || len(pending) != 1 || pending[0].Outcome.AuthorizationID != "ret-note-1" || pending[0].TransactionID != "" {
+		t.Fatalf("pending = %+v err=%v (want ret-1 only, still unsubmitted)", pending, err)
+	}
+	if err := s.NoteOutcomeRefusal(ctx, "ret-note-none", "x"); !errors.Is(err, ports.ErrAdviceUnknown) {
+		t.Fatalf("note on an unseen advice = %v", err)
 	}
 }
 

@@ -186,7 +186,7 @@ func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) st
 	}
 	poller := &returnsPoller{
 		poll:     &usecases.PollReturnAdvices{Gateway: gateway, Views: ad.advices, Feed: ad.advices},
-		drain:    &usecases.SubmitReturnOutcomes{Gateway: gateway, Views: ad.advices, Feed: ad.advices},
+		drain:    &usecases.SubmitReturnOutcomes{Gateway: gateway, Views: ad.advices, Feed: ad.advices, Clock: ad.clock},
 		interval: netCfg.interval,
 		logger:   logger,
 	}

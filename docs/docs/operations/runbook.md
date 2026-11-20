@@ -94,6 +94,26 @@ UPDATE outbox SET attempts = 0, next_attempt_at = now() WHERE id = '<uuid>';
 
 Full design: [ADR 0005](/docs/adr/0005-transactional-outbox-and-relay).
 
+## Network return outcomes
+
+With `NETWORK_RETURNS_POLLER_ENABLED`, each tick (`NETWORK_RETURNS_POLL_INTERVAL`, default 30 s)
+submits every `PENDING` outcome to the network's `POST /vendor/return-outcomes` and settles every
+`SUBMITTED` one. The key is `return-outcome-<authorizationId>`: the same outcome is always the same
+request.
+
+- A refusal the network **releases** (`not-found`, `illegal-transition`, `concurrent-update`,
+  `vendor-suspended`: nothing committed, the key free) keeps the outcome `PENDING`. The tick logs
+  WARN `network return outcome refused but released; the next tick retries it under the same key`
+  with `authorization_id` and `refusal`, and `return_advice_view.outcome_errors` holds the last
+  refusal text. The retry runs for 24 h after the outcome was composed (`outcome_since`); then the
+  outcome is `FAILED` with that text, like a final refusal.
+- A **final** refusal (`validation-failed`, `ack-window-closed`, an unknown slug, a 4xx with no
+  problem document) is `FAILED` at once. A `FAILED` outcome is terminal and never drains again.
+- To see what is retrying:
+  `SELECT authorization_id, outcome_since, outcome_errors FROM return_advice_view WHERE outcome_state = 'PENDING' AND outcome_errors <> '';`
+
+Design, the slug table and the bound: [ADR 0013](/docs/adr/0013-retry-the-refusals-the-network-releases).
+
 ## Housekeeping
 
 - `outbox`: drained by the relay (successful rows deleted). Only capped rows and a broker outage
