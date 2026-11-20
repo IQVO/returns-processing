@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/claudioed/returns-processing/internal/application/ports"
 	"github.com/claudioed/returns-processing/internal/application/views"
 )
 
@@ -172,7 +171,7 @@ func (c *returnsClient) submitOutcome(ctx context.Context, out views.ReturnOutco
 	var accepted struct {
 		TransactionID string `json:"transactionId"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/vendor/return-outcomes", url.Values{"vendorId": {c.vendorID}}, raw, outcomeKey(out.AuthorizationID), &accepted); err != nil {
+	if err := c.do(ctx, http.MethodPost, returnOutcomesPath, url.Values{"vendorId": {c.vendorID}}, raw, outcomeKey(out.AuthorizationID), &accepted); err != nil {
 		return "", err
 	}
 	if accepted.TransactionID == "" {
@@ -197,10 +196,10 @@ func (c *returnsClient) getJSON(ctx context.Context, path string, query url.Valu
 	return c.do(ctx, http.MethodGet, path, query, nil, "", out)
 }
 
-// do makes one Vendor API call. A definitive answer — the network replied
-// 400/404/409/422 with a problem document — wraps ports.ErrOutcomeRefused
-// (the drain records it terminal); 5xx and transport failures are plain
-// errors the next tick retries.
+// do makes one Vendor API call. A 400/404/409/422 answer is a
+// ports.OutcomeRefusal: a verdict (wraps ports.ErrOutcomeRefused, the drain
+// records it terminal) unless the network releases that refusal on the submit route
+// (ADR 0013); 5xx and transport failures are plain errors the next tick retries.
 func (c *returnsClient) do(ctx context.Context, method, path string, query url.Values, body []byte, idempotencyKey string, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -238,8 +237,10 @@ func (c *returnsClient) do(ctx context.Context, method, path string, query url.V
 	return c.refusal(method, path, resp.StatusCode, raw)
 }
 
-// refusal maps a non-2xx answer onto the two error classes the drain
-// knows: definitive (wrapping ports.ErrOutcomeRefused) and retriable.
+// refusal maps a non-2xx answer onto the classes the drain knows: a 400/404/409/422 is
+// a ports.OutcomeRefusal (terminal, or Retryable when the network releases the
+// refusal of the submit route, see refusal_classes.go); everything else, a 5xx and a 429
+// included, is a plain error the next tick retries.
 func (c *returnsClient) refusal(method, path string, status int, raw []byte) error {
 	var p problemDTO
 	_ = json.Unmarshal(raw, &p)
@@ -253,7 +254,8 @@ func (c *returnsClient) refusal(method, path string, status int, raw []byte) err
 	err := fmt.Errorf("retail-network: %s %s answered %d %s: %s", method, path, status, p.Type, detail)
 	switch status {
 	case http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
-		return fmt.Errorf("%w: %w", ports.ErrOutcomeRefused, err)
+		released := method == http.MethodPost && path == returnOutcomesPath && returnOutcomeRefusals.retryable(p.Type)
+		return &outcomeRefusalError{slug: p.Type, released: released, cause: err}
 	default:
 		return err
 	}
