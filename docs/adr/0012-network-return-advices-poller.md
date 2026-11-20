@@ -101,3 +101,11 @@ multi-parcel returns become real.
   poller); the REST and MCP surfaces of this service are unchanged.
 - The deploy needs the poller's env vars (flag, base URL, vendor id, optional
   interval) on `cmd/api` only.
+
+## Addendum 2026-11-19: a released refusal is no longer terminal
+
+Decision 5 and 6 above recorded every definitive refusal (400/404/409/422) as `FAILED`. Since the
+network stores only the refusals that are final (its ADR 0015), the refusals it RELEASES keep the
+outcome `PENDING` and are retried under the same idempotency key until accepted or until 24 h after
+the outcome was composed; see [ADR 0013](/docs/adr/0013-retry-the-refusals-the-network-releases).
+The rest of this ADR stands.

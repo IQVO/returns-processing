@@ -35,6 +35,17 @@ sidebar_position: 4
 | WARN `not a valid CloudEvent` in the logs | a flat envelope or garbage on a consumed topic | skipped and committed past by design; find the producer of that message |
 | Same event applied twice? | it cannot: the CloudEvents `id` is claimed in the same transaction as the effect | check `processed_events` for the id if you suspect otherwise |
 
+## Network return outcomes
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| WARN `network return outcome refused but released; the next tick retries ...` with `refusal=not-found` | the network has not consumed the return advice yet (its copy is event-fed) | nothing: the outcome stays `PENDING` and is retried under the same key every tick, for 24 h from `outcome_since` |
+| the same WARN with `refusal=vendor-suspended` | the vendor is suspended at the network | have an operator reinstate the vendor there; the next tick passes. After 24 h the outcome is `FAILED` |
+| the same WARN with `refusal=concurrent-update` or `illegal-transition` | another writer won, or the advice is not yet in the state the outcome needs | nothing, it clears on a later tick |
+| outcome `FAILED`, `outcome_errors` reads `... answered 404 not-found ...` | a released refusal outlived the 24 h window | find out with the network's operators why it never consumed the advice; the service has no re-arm of a `FAILED` outcome (not decided, ADR 0013) |
+| outcome `FAILED` at once, `outcome_errors` names `validation-failed`, `ack-window-closed` or a slug you do not know | a final refusal, or a slug the table of [ADR 0013](/docs/adr/0013-retry-the-refusals-the-network-releases) does not classify (unknown is terminal) | read the callee's detail in the text; if the slug is new and should retry, add it to `refusal_classes.go` with the network's class |
+| `refusal_spec_test` fails after a pin refresh | the network named or released a problem type the table does not classify | read the failure line, classify the slug from the network's class table (its ADR 0015) and update the table and ADR 0013 together |
+
 ## Decisions look wrong
 
 | Symptom | Cause | Fix |
