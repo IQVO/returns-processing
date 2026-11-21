@@ -98,6 +98,17 @@ type world struct {
 	lastBody   []byte
 	consumeOut usecases.ConsumeOutcome
 
+	// The network return-advice seam (ADR 0012/0013): the advice view
+	// double, the scripted network gateway, and the poll and drain use
+	// cases over them. InspectReturnLine carries the completion hook, so
+	// a receipt keyed by an advice's authorizationId composes its outcome.
+	advices  *memory.ReturnAdvices
+	netgw    *scriptedReturnsGateway
+	poll     *usecases.PollReturnAdvices
+	drain    *usecases.SubmitReturnOutcomes
+	pollOut  usecases.AdvicePollResult
+	drainOut usecases.OutcomeDrainResult
+
 	lastErr    error
 	errChecked bool
 	unchecked  []error
@@ -164,6 +175,19 @@ func (w *world) start() {
 		Reader: w.analytics,
 		Now:    clock.Now,
 	}))
+
+	// The network return-advice seam, wired the way cmd/api wires it: the
+	// completion hook on the inspection use case, and the poll and drain
+	// use cases over the same advice view and gateway. A receipt whose
+	// rmaId names no advice (every non-network flow) composes nothing.
+	w.advices = memory.NewReturnAdvices()
+	w.netgw = newScriptedReturnsGateway()
+	w.uc.inspect.Advices = w.advices
+	w.uc.inspect.AdviceFeed = w.advices
+	w.poll = &usecases.PollReturnAdvices{Gateway: w.netgw, Views: w.advices, Feed: w.advices}
+	w.drain = &usecases.SubmitReturnOutcomes{Gateway: w.netgw, Views: w.advices, Feed: w.advices, Clock: clock}
+	w.pollOut, w.drainOut = usecases.AdvicePollResult{}, usecases.OutcomeDrainResult{}
+
 	w.lastStatus, w.lastHeader, w.lastBody, w.consumeOut = 0, nil, nil, ""
 
 	w.lastErr, w.errChecked, w.unchecked = nil, false, nil
