@@ -111,7 +111,7 @@ func (c *Consumer) HandleMessage(ctx context.Context, value []byte) error {
 	logger := defaultLogger(c.Logger)
 	e, err := cloudevents.Decode(value)
 	if err != nil {
-		logger.WarnContext(ctx, "skipping a message that is not a valid CloudEvent", "consumer", c.Name, "topic", c.Topic, "error", err)
+		logger.WarnContext(ctx, "skipping a message that is not a valid CloudEvent", "consumer", c.Name, "topic", c.Topic, "error", sanitizeErr(err))
 		return nil
 	}
 	handle, ok := c.Handlers[e.Type()]
@@ -123,10 +123,10 @@ func (c *Consumer) HandleMessage(ctx context.Context, value []byte) error {
 		return err
 	}
 	if c.DeadLetterInvalid && c.DLQ != nil {
-		logger.WarnContext(ctx, "dead-lettering an event that can never be applied", "consumer", c.Name, "type", e.Type(), "event_id", e.ID(), "error", err)
+		logger.WarnContext(ctx, "dead-lettering an event that can never be applied", "consumer", c.Name, "type", logSafe(e.Type()), "event_id", logSafe(e.ID()), "error", sanitizeErr(err))
 		return fmt.Errorf("%w: %w", errPoison, err)
 	}
-	logger.WarnContext(ctx, "skipping an event that can never be applied", "consumer", c.Name, "type", e.Type(), "event_id", e.ID(), "error", err)
+	logger.WarnContext(ctx, "skipping an event that can never be applied", "consumer", c.Name, "type", logSafe(e.Type()), "event_id", logSafe(e.ID()), "error", sanitizeErr(err))
 	return nil
 }
 
@@ -146,6 +146,6 @@ func apply(ctx context.Context, logger *slog.Logger, e ce.Event, run func() (use
 	if err != nil {
 		return err
 	}
-	logger.InfoContext(ctx, "event processed", "type", e.Type(), "event_id", e.ID(), "subject", e.Subject(), "outcome", string(outcome))
+	logger.InfoContext(ctx, "event processed", "type", logSafe(e.Type()), "event_id", logSafe(e.ID()), "subject", logSafe(e.Subject()), "outcome", logSafe(string(outcome)))
 	return nil
 }
