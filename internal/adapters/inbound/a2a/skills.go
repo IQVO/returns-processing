@@ -267,6 +267,6 @@ func problemFromUseCase(err error, notFound *problem) *problem {
 	if notFound != nil && errors.Is(err, ports.ErrNotFound) {
 		return notFound
 	}
-	slog.Error("a2a skill failed", "error", err)
+	slog.Error("a2a skill failed", "error", logReplacer.Replace(err.Error()))
 	return problemInternal()
 }

@@ -29,6 +29,6 @@ func mapError(err error, notFoundSlug, notFoundDetail string) error {
 		}
 		return toolError(notFoundSlug, notFoundDetail)
 	}
-	slog.Error("mcp tool failed with an unexpected error", "error", err)
+	slog.Error("mcp tool failed with an unexpected error", "error", logReplacer.Replace(err.Error()))
 	return toolError("internal-error", "an unexpected internal error occurred")
 }

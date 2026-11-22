@@ -87,7 +87,7 @@ func recoverPanic(next http.Handler) http.Handler {
 			if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 				panic(rec)
 			}
-			slog.ErrorContext(r.Context(), "handler panicked", "panic", rec, "method", logSafe(r.Method), "path", logSafe(r.URL.Path))
+			slog.ErrorContext(r.Context(), "handler panicked", "panic", logSafe(fmt.Sprint(rec)), "method", logSafe(r.Method), "path", logSafe(r.URL.Path))
 			writeProblem(w, r, internalProblem, "an unexpected error occurred")
 		}()
 		next.ServeHTTP(w, r)
