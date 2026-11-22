@@ -214,6 +214,15 @@ label; a Service never selects more than one component
 {{- include "returns-processing.fullname" . }}-a2a
 {{- end }}
 
+{{/* agents.colocate (warehouse-infra ADR 0012): "true" iff colocate, mcp and a2a are all on; else empty. */}}
+{{- define "returns-processing.agentsColocated" -}}
+{{- if and (.Values.agents | default dict).colocate .Values.mcp.enabled .Values.a2a.enabled }}true{{ end -}}
+{{- end }}
+
+{{- define "returns-processing.agentsFullname" -}}
+{{- printf "%s-agents" (include "returns-processing.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/*
 Fully qualified names of the analytics components (ADR 0007). Each is its own
 workload with its own app.kubernetes.io/component label; the reports Service

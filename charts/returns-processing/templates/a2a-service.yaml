@@ -10,12 +10,12 @@ spec:
   type: {{ .Values.a2a.service.type }}
   ports:
     - port: {{ .Values.a2a.service.port }}
-      targetPort: http
+      targetPort: {{ ternary "a2a" "http" (eq (include "returns-processing.agentsColocated" .) "true") }}
       protocol: TCP
       name: http
   # component=a2a pins this Service to the a2a Deployment's pods
   # (tests/test_service_selectors.py).
   selector:
     {{- include "returns-processing.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: a2a
+    app.kubernetes.io/component: {{ ternary "agents" "a2a" (eq (include "returns-processing.agentsColocated" .) "true") }}
 {{- end }}
