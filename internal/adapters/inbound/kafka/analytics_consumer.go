@@ -234,7 +234,7 @@ func (c *AnalyticsConsumer) skipped(ctx context.Context, msg kafkago.Message, ca
 	c.skipsOnce.Do(func() { c.skips = &skipSampler{every: skipWarnEvery, now: c.now} })
 	if emit, suppressed := c.skips.allow(); emit {
 		defaultLogger(c.Logger).WarnContext(ctx, "analytics: skipping message that is not a CloudEvents 1.0 event (further skips are counted, not logged, until the next interval)",
-			"error", cause, "topic", msg.Topic, "partition", msg.Partition, "offset", msg.Offset, "suppressed_since_last_warning", suppressed)
+			"error", sanitizeErr(cause), "topic", msg.Topic, "partition", msg.Partition, "offset", msg.Offset, "suppressed_since_last_warning", suppressed)
 	}
 }
 
@@ -244,7 +244,7 @@ func (c *AnalyticsConsumer) skipped(ctx context.Context, msg kafkago.Message, ca
 // never lost.
 func (c *AnalyticsConsumer) deadLetter(ctx context.Context, msg kafkago.Message, cause error) error {
 	defaultLogger(c.Logger).ErrorContext(ctx, "analytics: dead-lettering a message that can never be projected",
-		"error", cause, "dlq_topic", c.DLQTopic, "partition", msg.Partition, "offset", msg.Offset)
+		"error", sanitizeErr(cause), "dlq_topic", c.DLQTopic, "partition", msg.Partition, "offset", msg.Offset)
 	if err := publishDeadLetter(ctx, c.DLQ, c.DLQTopic, msg, cause); err != nil {
 		return fmt.Errorf("analytics: publish to dead-letter topic %s: %w", c.DLQTopic, err)
 	}

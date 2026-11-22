@@ -222,7 +222,7 @@ func (r *OutboxRelay) Run(ctx context.Context) error {
 	for {
 		n, err := r.RelayOnce(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			r.logger.ErrorContext(ctx, "outbox relay pass failed", "error", err)
+			r.logger.ErrorContext(ctx, "outbox relay pass failed", "error", sanitizeErr(err))
 		}
 		if n >= r.batchSize && err == nil {
 			if ctx.Err() != nil {
@@ -294,8 +294,8 @@ func (r *OutboxRelay) deadLetter(ctx context.Context, tx pgx.Tx, row claimedRow,
 		return fmt.Errorf("delete dead-lettered outbox row %d: %w", row.id, err)
 	}
 	r.logger.WarnContext(ctx, DeadLetteredMsg,
-		"outbox_id", row.id, "topic", dlq.Topic, "key", string(dlq.Key),
-		"aggreg_type", row.row.AggregType, "event_id", row.row.EventID, "cause", cause)
+		"outbox_id", row.id, "topic", dlq.Topic, "key", sanitizeLog(string(dlq.Key)),
+		"aggreg_type", sanitizeLog(row.row.AggregType), "event_id", sanitizeLog(row.row.EventID), "cause", sanitizeLog(cause))
 	return nil
 }
 
@@ -329,7 +329,7 @@ func (r *OutboxRelay) recordFailure(ctx context.Context, tx pgx.Tx, row claimedR
 func (r *OutboxRelay) rowAttempts(ctx context.Context, tx pgx.Tx, row claimedRow) int {
 	var attempts int
 	if err := tx.QueryRow(ctx, `SELECT attempts FROM outbox WHERE id = $1`, row.id).Scan(&attempts); err != nil {
-		r.logger.ErrorContext(ctx, "outbox relay: read attempts failed", "outbox_id", row.id, "error", err)
+		r.logger.ErrorContext(ctx, "outbox relay: read attempts failed", "outbox_id", row.id, "error", sanitizeErr(err))
 	}
 	return attempts
 }
@@ -340,13 +340,13 @@ func (r *OutboxRelay) rowAttempts(ctx context.Context, tx pgx.Tx, row claimedRow
 func (r *OutboxRelay) logFailure(ctx context.Context, row claimedRow, msg outbox.Message, attempts int, sendErr error) {
 	if r.maxAttempts > 0 && attempts >= r.maxAttempts {
 		r.logger.ErrorContext(ctx, AttemptCapReachedMsg,
-			"outbox_id", row.id, "topic", msg.Topic, "event_type", msg.EventType,
-			"key", string(msg.Key), "attempts", attempts, "max_attempts", r.maxAttempts, "error", sendErr)
+			"outbox_id", row.id, "topic", msg.Topic, "event_type", sanitizeLog(msg.EventType),
+			"key", sanitizeLog(string(msg.Key)), "attempts", attempts, "max_attempts", r.maxAttempts, "error", sanitizeErr(sendErr))
 		return
 	}
 	r.logger.WarnContext(ctx, "outbox relay: send failed, stopping this pass at the failed row",
-		"outbox_id", row.id, "topic", msg.Topic, "event_type", msg.EventType,
-		"key", string(msg.Key), "attempts", attempts, "error", sendErr)
+		"outbox_id", row.id, "topic", msg.Topic, "event_type", sanitizeLog(msg.EventType),
+		"key", sanitizeLog(string(msg.Key)), "attempts", attempts, "error", sanitizeErr(sendErr))
 }
 
 // retryBackoff spaces a failing row's retries exponentially from the relay
