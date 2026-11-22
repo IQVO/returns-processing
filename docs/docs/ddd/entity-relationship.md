@@ -152,7 +152,7 @@ consumers (ADR 0003), and `processed_events`, `outbox` and
 | `CHECK ((kind = 'MATCHED') = (rma_id <> ''))` on `return_receipt_lines` | The refused third state cannot even be stored: a MATCHED line carries its RMA, an UNEXPECTED one carries none. |
 | `uq_dispositions_one_policy_decision_per_line` — UNIQUE `(receipt_id, line_no) WHERE supersedes IS NULL` | At most one POLICY decision per line; an override (supersedes set) is outside the index, so a line can be superseded any number of times. |
 | `CHECK (version = 1)` on `dispositions` | Decisions never transition: the immutable aggregate's whole optimistic-concurrency story. |
-| `PRIMARY KEY (version)` + `uq_disposition_policies_one_current` | Append-only policy versions, at most one current; `Save` clears the previous current and upserts the new one in one transaction. |
+| `PRIMARY KEY (version)` + `uq_disposition_policies_one_current` | Append-only policy versions, at most one current; `Save` inserts a new version with `ON CONFLICT DO NOTHING` (an existing version is refused, `policy-version-exists`), then moves the current mark, in one transaction. |
 | `event_id UNIQUE` in `outbox` | A relay retry republishes the same CloudEvents id byte-identically; consumers dedupe on it. |
 | `CHECK (status >= 200 AND status < 500)` on `idempotency_keys` | Only 2xx and 4xx answers are replayable; a 5xx is never stored, so the caller retries for real. |
 

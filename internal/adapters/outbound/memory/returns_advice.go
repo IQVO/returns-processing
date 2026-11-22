@@ -95,6 +95,7 @@ func (m *ReturnAdvices) MarkOutcomeSubmitted(_ context.Context, authorizationID,
 	}
 	stored.transactionID = transactionID
 	stored.state = views.AdviceOutcomeSubmitted
+	stored.refusal = "" // an accepted submission clears the note of a released refusal
 	m.outcome[authorizationID] = stored
 	row.OutcomeState = views.AdviceOutcomeSubmitted
 	m.rows[authorizationID] = row
@@ -141,6 +142,23 @@ func (m *ReturnAdvices) MarkOutcomeFailed(_ context.Context, authorizationID, re
 	return nil
 }
 
+// NoteOutcomeRefusal implements ports.ReturnAdviceFeed: the last released
+// refusal of a PENDING outcome; a terminal outcome is left unchanged.
+func (m *ReturnAdvices) NoteOutcomeRefusal(_ context.Context, authorizationID, refusal string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.rows[authorizationID]; !ok {
+		return ports.ErrAdviceUnknown
+	}
+	stored, ok := m.outcome[authorizationID]
+	if !ok || stored.state != views.AdviceOutcomePending {
+		return nil
+	}
+	stored.refusal = refusal
+	m.outcome[authorizationID] = stored
+	return nil
+}
+
 // Get implements ports.ReturnAdviceViews.
 func (m *ReturnAdvices) Get(_ context.Context, authorizationID string) (views.ReturnAdvice, bool, error) {
 	m.mu.Lock()
@@ -178,7 +196,8 @@ func (m *ReturnAdvices) LatestReadyAt(_ context.Context) (time.Time, bool, error
 	return latest, !latest.IsZero(), nil
 }
 
-// Refusal returns the recorded refusal text of a FAILED outcome (test aid).
+// Refusal returns the recorded refusal text: the reason of a FAILED outcome, or the
+// note of the last released refusal of a PENDING one (test aid).
 func (m *ReturnAdvices) Refusal(authorizationID string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()

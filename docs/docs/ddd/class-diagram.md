@@ -177,9 +177,11 @@ Facts worth knowing that the diagram cannot show:
   always exactly one kind — the zero `Line` (the refused third state) fails
   `Open`. `LineKind` is `MATCHED | UNEXPECTED`.
 - `Decide`'s order of precedence: a forced outcome on the classification
-  wins outright; then the table's exact (grade, class) entry or its `*`
-  default; then a RESTOCK the table returned is demoted to `vetoOutcome`
-  when the grade is below B or the SKU is hazmat without a DOT rating.
+  overrides the table, except `force:DISPOSE`, which is a RESTOCK guardrail
+  rather than an outcome; then the table's exact (grade, class) entry or its
+  `*` default; then a RESTOCK (table or forced) is demoted to `vetoOutcome`
+  when the grade is below B, the SKU is DISPOSE-classified, or the SKU is
+  hazmat without a DOT rating.
 - The domain events (`ReturnAuthorized` … in each aggregate's `events.go`)
   are plain structs with a per-package `Header` and `OccurredAt()`; they
   know nothing of CloudEvents or Kafka — the outbound adapter maps them

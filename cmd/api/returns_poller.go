@@ -58,9 +58,22 @@ func (p *returnsPoller) tick(ctx context.Context) {
 	} else if res.Seen > 0 {
 		p.logger.Info("network return advices polled", "seen", res.Seen, "applied", res.Applied)
 	}
-	if res, err := p.drain.Execute(ctx); err != nil {
+	res, err := p.drain.Execute(ctx)
+	if err != nil {
 		p.logger.Warn("network return-outcome drain failed; the next tick retries", "error", err)
-	} else if res.Submitted+res.Settled+res.Failed > 0 {
+	}
+	p.logDrain(res) // what the tick did before the error, too
+}
+
+// logDrain reports what a drain tick did: the outcomes it moved, and each refusal the
+// network released (the outcome stays pending; the next tick retries it under the same
+// key, ADR 0013).
+func (p *returnsPoller) logDrain(res usecases.OutcomeDrainResult) {
+	for _, r := range res.Released {
+		p.logger.Warn("network return outcome refused but released; the next tick retries it under the same key",
+			"authorization_id", r.AuthorizationID, "refusal", r.Slug)
+	}
+	if res.Submitted+res.Settled+res.Failed > 0 {
 		p.logger.Info("network return outcomes drained",
 			"submitted", res.Submitted, "settled", res.Settled, "failed", res.Failed)
 	}

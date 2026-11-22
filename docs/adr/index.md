@@ -26,3 +26,4 @@ section.
 | [0010](/docs/adr/0010-agent-authority-levels-and-complete-mcp-surface) | agent authority levels and complete MCP surface — Agentic Standard v2 on the read-only MCP and A2A surfaces | Accepted (2026-11-02) |
 | [0011](/docs/adr/0011-adopt-the-fleet-observability-standard) | adopt the fleet observability standard — OTLP traces and metrics, trace-correlated logs, one business counter | Accepted (2026-11-14) |
 | [0012](/docs/adr/0012-network-return-advices-poller) | the network return-advices poller — the first vendor-connectivity seam, the advice view, receipts keyed by authorizationId, outcome submission | Accepted (2026-11-14) |
+| [0013](/docs/adr/0013-retry-the-refusals-the-network-releases) | retry, under the same Idempotency-Key, the refusals the network releases (replay class RETRYABLE) — the outbound refusal table, bounded by a window | Accepted (2026-11-19) |

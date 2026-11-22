@@ -35,14 +35,25 @@ sidebar_position: 4
 | WARN `not a valid CloudEvent` in the logs | a flat envelope or garbage on a consumed topic | skipped and committed past by design; find the producer of that message |
 | Same event applied twice? | it cannot: the CloudEvents `id` is claimed in the same transaction as the effect | check `processed_events` for the id if you suspect otherwise |
 
+## Network return outcomes
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| WARN `network return outcome refused but released; the next tick retries ...` with `refusal=not-found` | the network has not consumed the return advice yet (its copy is event-fed) | nothing: the outcome stays `PENDING` and is retried under the same key every tick, for 24 h from `outcome_since` |
+| the same WARN with `refusal=vendor-suspended` | the vendor is suspended at the network | have an operator reinstate the vendor there; the next tick passes. After 24 h the outcome is `FAILED` |
+| the same WARN with `refusal=concurrent-update` or `illegal-transition` | another writer won, or the advice is not yet in the state the outcome needs | nothing, it clears on a later tick |
+| outcome `FAILED`, `outcome_errors` reads `... answered 404 not-found ...` | a released refusal outlived the 24 h window | find out with the network's operators why it never consumed the advice; the service has no re-arm of a `FAILED` outcome (not decided, ADR 0013) |
+| outcome `FAILED` at once, `outcome_errors` names `validation-failed`, `ack-window-closed` or a slug you do not know | a final refusal, or a slug the table of [ADR 0013](/docs/adr/0013-retry-the-refusals-the-network-releases) does not classify (unknown is terminal) | read the callee's detail in the text; if the slug is new and should retry, add it to `refusal_classes.go` with the network's class |
+| `refusal_spec_test` fails after a pin refresh | the network named or released a problem type the table does not classify | read the failure line, classify the slug from the network's class table (its ADR 0015) and update the table and ADR 0013 together |
+
 ## Decisions look wrong
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Grade A answered `DISPOSE`, not `RESTOCK` | a guardrail demoted it: the SKU is DISPOSE-classified, or hazmat without a DOT rating | that is fail-closed by design (ADR 0002); check `get_disposition_policy` and the SKU's classification |
+| Grade A answered something other than `RESTOCK` (`DISPOSE` unless the policy's `vetoOutcome` says otherwise) | a guardrail demoted a RESTOCK to the veto outcome: the SKU is DISPOSE-classified (`force:DISPOSE`), or hazmat without a DOT rating | that is fail-closed by design (ADR 0002); check `get_disposition_policy` and the SKU's classification |
 | RESTOCK for grade C | impossible from `Decide` | an operator override did it — check the disposition's `supersedes`/`reason` |
 | `409 line-already-inspected` | a line is graded exactly once | correct the DECISION with an override, never a re-inspection |
-| `422 override-reason-required` | the reason field is mandatory (1–500 chars) | send it; the override explains itself |
+| `400 override-reason-required` | the reason field is mandatory and must not be blank (there is no maximum length) | send it; the override explains itself |
 | Two dispositions, one line | the second carries `supersedes` = the first | the ORIGINAL is immutable — audit trail, not a bug |
 
 ## REST problem types
@@ -57,12 +68,13 @@ All errors are RFC 7807 with
 | `idempotency-key-required` | every write (4 POSTs + the policy PUT) needs an `Idempotency-Key` header |
 | `idempotency-key-reused` (`409`) | the same key was sent with a DIFFERENT method, path or body — one key per logical request |
 | `rma-not-found` / `receipt-not-found` / `disposition-not-found` / `policy-not-found` | unknown id (or no policy declared yet) |
-| `return-not-authorizable` | rejection code in the body: `LINE_NOT_MANIFESTED`, `RETURN_WINDOW_EXPIRED`, `OPEN_RMA_EXISTS`, `QUANTITY_EXCEEDS_POLICY` |
+| `return-not-authorizable` (`409`) | rejection code at the start of the `detail`: `LINE_NOT_MANIFESTED`, `RETURN_WINDOW_EXPIRED`, `QUANTITY_EXCEEDS_POLICY` or `ORDER_LINE_NOT_ALLOCATED` (the line is not in the allocations copy; fail-closed). An open RMA is the separate slug `open-rma-exists` |
 | `open-rma-exists` | one open RMA per (order, line); the existing one must close first |
-| `rma-not-receivable` | a receipt was opened against an RMA that is not in AUTHORIZED state |
+| `rma-not-receivable` | in the problem catalogue (`errors.go:74,117-119`) but not answered today: `OpenReturnReceipt` never looks the RMA up and moves no RMA (`apis/openapi.yaml`, operation `openReturnReceipt`), so opening a receipt against any `rmaId` is accepted |
 | `line-already-inspected` / `inspected-exceeds-received` | grading rules (ADR 0002) |
 | `override-reason-required` | an override must explain itself |
 | `concurrent-modification` | optimistic version guard lost — reload, re-apply |
+| `policy-version-exists` (`409`) | `PUT /disposition-policies/{version}` for a version that is already declared; the policy is append-only and nothing changed — declare the table as a NEW version |
 | `dependency-unavailable` | Postgres or Kafka unreachable behind `503 /readyz` — not a client error |
 | `internal-error` | anything unexpected; the log line carries the cause |
 

@@ -249,13 +249,17 @@ type Policies struct {
 // NewPolicies returns an empty double.
 func NewPolicies() *Policies { return &Policies{byVer: map[int64]*disposition.DispositionPolicy{}} }
 
-// Save stores the version and marks it current. A NEW version appends; a
-// re-declared version replaces its row (the use cases re-declare v1 when a
-// fixture resets the table), which the Postgres adapter mirrors with an
-// upsert on the version primary key.
+// Save appends the version and marks it current. A version that is already
+// declared is refused with disposition.ErrPolicyVersionExists: the policy is
+// append-only (ADR 0002), a change is a new version, and every decision's
+// policy_version must keep naming the table that made it. The Postgres
+// adapter mirrors this with INSERT ... ON CONFLICT DO NOTHING on the primary key.
 func (r *Policies) Save(_ context.Context, p *disposition.DispositionPolicy) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, declared := r.byVer[p.Version()]; declared {
+		return disposition.ErrPolicyVersionExists
+	}
 	r.byVer[p.Version()] = clone(p)
 	r.current = clone(p)
 	return nil

@@ -51,6 +51,30 @@ Feature: Decision guardrails and overrides (documentation-derived)
     And the published disposition events are DispositionDecided
     And ReturnLineStaged is published 0 times
 
+  # ADR 0002 invariant 2: "never RESTOCK for a DISPOSE-classified SKU ... a RESTOCK the
+  # table returns under any of those conditions is demoted to the policy's vetoOutcome".
+  # force:DISPOSE is a RESTOCK guardrail like the grade ceiling, not a forced outcome.
+  Scenario Outline: A force:DISPOSE SKU the table would restock falls to the veto outcome the policy names
+    Given a PUT request is sent to "/disposition-policies/2" with key "pol-2" and the JSON body {"returnWindowDays":30,"maxUnitsPerLine":5,"vetoOutcome":"<veto>","rules":[{"grade":"A","productClass":"*","outcome":"RESTOCK"},{"grade":"B","productClass":"*","outcome":"REFURBISH"},{"grade":"C","productClass":"*","outcome":"LIQUIDATE"},{"grade":"SCRAP","productClass":"*","outcome":"DISPOSE"}]}
+    And the response status is 201
+    And sku SKU-1001 is classified with tags force:DISPOSE
+    When line 1 is inspected with grade A and qty 1
+    Then the disposition of line 1 is <veto>
+    And ReturnLineStaged is published 0 times
+
+    Examples:
+      | veto      |
+      | DISPOSE   |
+      | RTV       |
+      | LIQUIDATE |
+
+  # The guardrail demotes a RESTOCK only: where the table does not say RESTOCK, the table stands.
+  Scenario: A force:DISPOSE SKU the table does not restock keeps the table's outcome
+    Given sku SKU-1001 is classified with tags force:DISPOSE
+    When line 3 is inspected with grade C and qty 1
+    Then the disposition of line 3 is LIQUIDATE
+    And ReturnLineStaged is published 0 times
+
   Scenario: The grade ceiling for RESTOCK is B, even when the operator's table says RESTOCK for every grade
     Given a PUT request is sent to "/disposition-policies/2" with key "pol-2" and the JSON body {"returnWindowDays":30,"maxUnitsPerLine":5,"rules":[{"grade":"A","productClass":"*","outcome":"RESTOCK"},{"grade":"B","productClass":"*","outcome":"RESTOCK"},{"grade":"C","productClass":"*","outcome":"RESTOCK"},{"grade":"SCRAP","productClass":"*","outcome":"RESTOCK"}]}
     And the response status is 201

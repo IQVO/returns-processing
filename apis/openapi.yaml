@@ -360,7 +360,10 @@ paths:
         `vetoOutcome` a guardrail demotion falls back to (default DISPOSE).
         An `outcome` outside the five values is 400 `invalid-policy`, a grade
         outside A/B/C/SCRAP 400 `invalid-grade`. `returnWindowDays` defaults to
-        0 when omitted. The 409 of this operation is `idempotency-key-reused`.
+        0 when omitted. A version that is already declared is refused with
+        409 `policy-version-exists`: the policy is append-only, a change is a
+        new version, never a rewrite. The other 409 of this operation is
+        `idempotency-key-reused`.
         Requires an `Idempotency-Key`.
       tags: [Disposition policies]
       parameters:
@@ -910,6 +913,14 @@ components:
                 status: 409
                 detail: inspected quantity must be at most the received quantity of the line
                 instance: /receipts/rcpt-1/lines/1/inspections
+            policyVersionExists:
+              summary: The policy version is already declared (append-only)
+              value:
+                type: https://errors.returns-processing.warehouse-systems.dev/policy-version-exists
+                title: The policy version is already declared
+                status: 409
+                detail: "policy versions are append-only: declare a new version instead of changing one"
+                instance: /disposition-policies/1
             concurrentModification:
               summary: Stale version or concurrent write
               value:

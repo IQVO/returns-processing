@@ -48,9 +48,13 @@ func newFixture(t *testing.T) fixture {
 func (f fixture) clock() memory.Clock { return memory.Clock{T: f.now} }
 
 // declare installs the standard total policy: every grade restocks-or-else
-// under "*", A/B restock, C liquidates, SCRAP disposes, veto DISPOSE.
+// under "*", A/B restock, C liquidates, SCRAP disposes, veto DISPOSE. The
+// policy is append-only, so a second call in one test is a no-op.
 func (f fixture) declare(t *testing.T) {
 	t.Helper()
+	if _, err := f.policies.FindByVersion(context.Background(), 1); err == nil {
+		return
+	}
 	uc := &usecases.DeclareDispositionPolicy{Policies: f.policies, Clock: f.clock()}
 	_, err := uc.Execute(context.Background(), usecases.PolicyDeclaration{
 		Version: 1, ReturnWindowDays: 30, MaxUnitsPerLine: 5,
@@ -67,16 +71,21 @@ func (f fixture) declare(t *testing.T) {
 }
 
 // declareRestockAll installs a total table that restocks every grade: the
-// fixture for guardrail-demotion checks.
+// fixture for guardrail-demotion checks. It is declared as the next version
+// after whatever the test already declared (the policy is append-only).
 func (f fixture) declareRestockAll(t *testing.T) {
 	t.Helper()
 	uc := &usecases.DeclareDispositionPolicy{Policies: f.policies, Clock: f.clock()}
+	version := int64(1)
+	if cur, err := f.policies.Current(context.Background()); err == nil {
+		version = cur.Version() + 1
+	}
 	var rules []disposition.Rule
 	for _, g := range shared.Grades {
 		rules = append(rules, disposition.Rule{Grade: g, ProductClass: "*", Outcome: disposition.OutcomeRestock})
 	}
 	_, err := uc.Execute(context.Background(), usecases.PolicyDeclaration{
-		Version: 1, ReturnWindowDays: 30, MaxUnitsPerLine: 5, Rules: rules,
+		Version: version, ReturnWindowDays: 30, MaxUnitsPerLine: 5, Rules: rules,
 	})
 	if err != nil {
 		t.Fatalf("declare restock-all policy: %v", err)

@@ -40,10 +40,24 @@ its own job.
 
 ## Acceptance (BDD) and architecture fitness
 
-- `make bdd` — godog/Gherkin acceptance over `features/`: `returns.feature` (the authorization
-  rule: allocated + manifested, window, cap, one open RMA per line), `receipt.feature` (matched /
-  unexpected lines, inspect once) and `disposition.feature` (the Decide table, guardrails,
-  overrides, staging once).
+- `make bdd` — godog/Gherkin acceptance over `features/` (`Strict: true`): 15 feature files, 111
+  `Scenario`/`Scenario Outline` definitions (`git grep -c -E "^[[:space:]]*Scenario" -- features`),
+  132 executed scenarios with the Outline rows expanded and 1334 steps
+  (`go test ./features -run TestFeatures -count=1 -v`). The original files are `returns.feature` (the
+  authorization rule: allocated + manifested, window, cap, one open RMA per line), `receipt.feature`
+  (matched / unexpected lines, inspect once), `disposition.feature` (the Decide table, guardrails,
+  overrides, staging once), `consumers.feature`, `reports.feature` and `rest_edge.feature`. Nine
+  `*_rules.feature` files pin the rules the documentation states, one rule per scenario title:
+  `authorization_rules` (cap inclusive, window anchored to the authorization instant, one open RMA per
+  line), `listing_rules` (keyset paging, no `nextCursor` after an exactly full page), `no_policy_rules`,
+  `policy_rules` (invalid declarations leave the current policy untouched), `disposition_rules` (class
+  fallback to `*`, DOT boundary, grade ceiling, veto outcome), `receipt_opening_rules`,
+  `inspection_rules`, `consumer_rules` (last write wins, redelivery ignored, invalid facts refused
+  before any claim) and `idempotency_rules` (a refusal is stored and replayed, key 128 / 129
+  characters). Their steps are in `steps_rules_test.go`. No scenario is tagged `@known-bug` any more:
+  `BDD_TAGS` (default `~@known-bug`) still selects scenarios, and a scenario that states a documented
+  rule the code does not meet yet is tagged `@known-bug`, runs only under
+  `BDD_TAGS=@known-bug go test ./features -run TestFeatures` and fails there until the defect is fixed.
 - `make arch-test` — the hexagonal fitness suite in `internal/architecture`: the domain imports
   nothing internal but the domain, no shipped binary imports the in-memory outbound adapters
   (`TestRuntimeBinaryHasNoInMemoryAdapters`), the outbox relay attempt cap is wired in the

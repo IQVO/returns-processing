@@ -1,0 +1,35 @@
+{
+  "_doc": "Every contract copy this repo pins from a producer, and the producer branch it must equal. scripts/harness/pinned_contract_gate.py fails when a copy differs from the producer's develop. Refresh = copy the file, never edit it. The vendor-connectivity pin is the OpenAPI the outbound refusal table is held against (internal/adapters/outbound/retailnetwork/refusal_spec_test.go, ADR 0013). The last pin is the SELF-pin: this repo's own event catalog (the events topic and its .dlq companion), asserted by the E1-E4 contract tests in internal/adapters/inbound/kafka against the outbox encoder's published catalogue.",
+  "pins": [
+    {
+      "local": "internal/adapters/inbound/kafka/testdata/fulfillment-execution.asyncapi.yaml",
+      "repo": "IQVO/fulfillment-execution",
+      "path": "apis/asyncapi.yaml",
+      "ref": "develop"
+    },
+    {
+      "local": "internal/adapters/inbound/kafka/testdata/order-management.asyncapi.yaml",
+      "repo": "IQVO/order-management",
+      "path": "apis/asyncapi.yaml",
+      "ref": "develop"
+    },
+    {
+      "local": "internal/adapters/inbound/kafka/testdata/product-master.asyncapi.yaml",
+      "repo": "IQVO/product-master",
+      "path": "apis/asyncapi.yaml",
+      "ref": "develop"
+    },
+    {
+      "local": "internal/adapters/outbound/retailnetwork/testdata/vendor-connectivity.openapi.yaml",
+      "repo": "IQVO/vendor-connectivity",
+      "path": "apis/openapi.yaml",
+      "ref": "develop"
+    },
+    {
+      "local": "internal/adapters/inbound/kafka/testdata/returns-processing.asyncapi.yaml",
+      "repo": "IQVO/returns-processing",
+      "path": "apis/asyncapi.yaml",
+      "ref": "develop"
+    }
+  ]
+}

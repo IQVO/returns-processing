@@ -186,7 +186,7 @@ func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) st
 	}
 	poller := &returnsPoller{
 		poll:     &usecases.PollReturnAdvices{Gateway: gateway, Views: ad.advices, Feed: ad.advices},
-		drain:    &usecases.SubmitReturnOutcomes{Gateway: gateway, Views: ad.advices, Feed: ad.advices},
+		drain:    &usecases.SubmitReturnOutcomes{Gateway: gateway, Views: ad.advices, Feed: ad.advices, Clock: ad.clock},
 		interval: netCfg.interval,
 		logger:   logger,
 	}
@@ -194,6 +194,13 @@ func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) st
 	defer stop() // belt to run's exits; the goroutine also ends with ctx
 	go func() { _ = poller.Run(pollerCtx) }()
 	return nil
+}
+
+// relayRunner is the outbox relay as serveUntilSignal drives it
+// (*postgres.OutboxRelay): Run relays until its context is cancelled and
+// then returns nil.
+type relayRunner interface {
+	Run(ctx context.Context) error
 }
 
 // serveUntilSignal runs httpServer, the consumers and the relay until
@@ -206,7 +213,7 @@ func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) st
 // non-zero and the pod restarts (the fleet rule: never serve on with a dead
 // consumer's frozen copy).
 func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http.Server,
-	readiness *inboundhttp.Readiness, relay *postgres.OutboxRelay, consumers *consumerSet,
+	readiness *inboundhttp.Readiness, relay relayRunner, consumers *consumerSet,
 ) error {
 	errCh := make(chan error, 1)
 	go func() {
@@ -217,7 +224,15 @@ func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http
 	}()
 
 	relayDone := make(chan error, 1)
-	relayCtx, stopRelay := context.WithCancel(ctx)
+	// The relay's lifetime is NOT the caller's: only stopRelay ends it, at
+	// step (5). Derived from ctx, a caller-ctx cancellation (the in-process
+	// tests stop run that way) would stop the relay at the same instant as
+	// sigCtx — first instead of last, and its clean return would race
+	// sigCtx.Done() below and be reported as "outbox relay stopped".
+	// WithoutCancel keeps ctx's values (trace context) and drops only its
+	// cancellation, so relayDone can fire while serving only for a relay
+	// that stopped on its own — a death.
+	relayCtx, stopRelay := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopRelay() // idempotent; every exit path releases the relay
 	go func() {
 		if err := relay.Run(relayCtx); err != nil && !errors.Is(err, context.Canceled) {

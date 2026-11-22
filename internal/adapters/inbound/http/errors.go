@@ -77,6 +77,7 @@ var (
 	invalidLimit     = problem{http.StatusBadRequest, "invalid-limit", "limit is invalid", "limit must be an integer between 1 and 500"}
 	invalidCursor    = problem{http.StatusBadRequest, "invalid-cursor", "cursor is invalid", "cursor is not a cursor issued by this API"}
 	concurrentMod    = problem{http.StatusConflict, "concurrent-modification", "The resource was modified by another request; re-fetch the latest version and retry", "concurrent modification"}
+	policyVersionDup = problem{http.StatusConflict, "policy-version-exists", "The policy version is already declared", "policy versions are append-only: declare a new version instead of changing one"}
 )
 
 // problemCatalogue maps every typed error to its problem, in match order.
@@ -119,6 +120,7 @@ var problemCatalogue = []struct {
 	{returnauthorization.ErrAlreadyDecided, rmaNotReceivable},
 	{returnreceipt.ErrLineAlreadyInspected, lineInspected},
 	{returnreceipt.ErrInspectedExceedsReceived, inspectedExceeds},
+	{disposition.ErrPolicyVersionExists, policyVersionDup},
 	{ports.ErrConcurrentModification, concurrentMod},
 	// Backstop: a receipt whose addressed line does not exist is a miss of
 	// the addressed resource (the inspect handler names the line).
