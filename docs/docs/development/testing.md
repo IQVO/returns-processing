@@ -40,9 +40,9 @@ its own job.
 
 ## Acceptance (BDD) and architecture fitness
 
-- `make bdd` — godog/Gherkin acceptance over `features/` (`Strict: true`): 15 feature files, 111
+- `make bdd` — godog/Gherkin acceptance over `features/` (`Strict: true`): 16 feature files, 126
   `Scenario`/`Scenario Outline` definitions (`git grep -c -E "^[[:space:]]*Scenario" -- features`),
-  132 executed scenarios with the Outline rows expanded and 1334 steps
+  147 executed scenarios with the Outline rows expanded and 1519 steps
   (`go test ./features -run TestFeatures -count=1 -v`). The original files are `returns.feature` (the
   authorization rule: allocated + manifested, window, cap, one open RMA per line), `receipt.feature`
   (matched / unexpected lines, inspect once), `disposition.feature` (the Decide table, guardrails,
