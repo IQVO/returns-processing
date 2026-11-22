@@ -51,12 +51,12 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 			logger.Log(r.Context(), levelFor(status), "http request",
-				"method", r.Method,
+				"method", logReplacer.Replace(r.Method),
 				"route", routePattern(r),
 				"status", status,
 				"duration_ms", time.Since(start).Milliseconds(),
 				"bytes", ww.BytesWritten(),
-				"request_id", middleware.GetReqID(r.Context()),
+				"request_id", logReplacer.Replace(middleware.GetReqID(r.Context())),
 			)
 		})
 	}
