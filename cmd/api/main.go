@@ -224,7 +224,15 @@ func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http
 	}()
 
 	relayDone := make(chan error, 1)
-	relayCtx, stopRelay := context.WithCancel(ctx)
+	// The relay's lifetime is NOT the caller's: only stopRelay ends it, at
+	// step (5). Derived from ctx, a caller-ctx cancellation (the in-process
+	// tests stop run that way) would stop the relay at the same instant as
+	// sigCtx — first instead of last, and its clean return would race
+	// sigCtx.Done() below and be reported as "outbox relay stopped".
+	// WithoutCancel keeps ctx's values (trace context) and drops only its
+	// cancellation, so relayDone can fire while serving only for a relay
+	// that stopped on its own — a death.
+	relayCtx, stopRelay := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopRelay() // idempotent; every exit path releases the relay
 	go func() {
 		if err := relay.Run(relayCtx); err != nil && !errors.Is(err, context.Canceled) {
