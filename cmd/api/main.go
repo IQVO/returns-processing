@@ -196,6 +196,13 @@ func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) st
 	return nil
 }
 
+// relayRunner is the outbox relay as serveUntilSignal drives it
+// (*postgres.OutboxRelay): Run relays until its context is cancelled and
+// then returns nil.
+type relayRunner interface {
+	Run(ctx context.Context) error
+}
+
 // serveUntilSignal runs httpServer, the consumers and the relay until
 // SIGINT/SIGTERM, until ctx is cancelled, until a listen error, or until a
 // worker dies, then shuts down in the fleet order: (1) /readyz flips to 503,
@@ -206,7 +213,7 @@ func startReturnsPoller(ctx context.Context, ad adapters, getenv func(string) st
 // non-zero and the pod restarts (the fleet rule: never serve on with a dead
 // consumer's frozen copy).
 func serveUntilSignal(ctx context.Context, logger *slog.Logger, httpServer *http.Server,
-	readiness *inboundhttp.Readiness, relay *postgres.OutboxRelay, consumers *consumerSet,
+	readiness *inboundhttp.Readiness, relay relayRunner, consumers *consumerSet,
 ) error {
 	errCh := make(chan error, 1)
 	go func() {
