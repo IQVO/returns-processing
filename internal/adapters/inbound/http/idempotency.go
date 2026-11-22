@@ -277,7 +277,7 @@ func (m *Idempotency) finishRejected(w http.ResponseWriter, r *http.Request, key
 		err = m.Store.Save(r.Context(), rec)
 	}
 	if err != nil {
-		m.Logger.WarnContext(r.Context(), "idempotency: answer not stored", "error", err)
+		m.Logger.WarnContext(r.Context(), "idempotency: answer not stored", "error", logSafe(err.Error()))
 		flush(w, out)
 		return
 	}
