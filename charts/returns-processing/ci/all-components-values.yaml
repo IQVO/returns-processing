@@ -29,16 +29,16 @@ mcp:
   route:
     enabled: true
     parentRefs:
-      - name: warehouse-gateway
-        namespace: kong
+      - name: agent-router
+        namespace: envoy-gateway-system
         sectionName: http
 a2a:
   enabled: true
   route:
     enabled: true
     parentRefs:
-      - name: warehouse-gateway
-        namespace: kong
+      - name: agent-router
+        namespace: envoy-gateway-system
         sectionName: http
 
 # The Gateway API route + Kong plugins on as well, with the real host path

@@ -238,12 +238,16 @@ mcp:
     type: ClusterIP
     port: 8090
     targetPort: 8090
-  # Kong exposure of the MCP server (mcp-route.yaml): host path
+  # Agent Router exposure of the MCP server (mcp-route.yaml): host path
   # /api/mcp/returns-processing rewritten to the SDK's /mcp endpoint.
   # Off by default; warehouse-infra turns it on with the real parentRefs.
   route:
     enabled: false
     path: "/api/mcp/returns-processing"
+    # Route timeout (HTTPRoute rule timeouts.request). "0s" disables it: Envoy's 15s
+    # default would cut MCP Streamable HTTP responses that stream over SSE.
+    timeouts:
+      request: "0s"
     parentRefs:
       - name: ""
         namespace: ""
@@ -277,13 +281,17 @@ a2a:
     type: ClusterIP
     port: 8093
     targetPort: 8093
-  # Kong exposure of the A2A server (a2a-route.yaml): host path
+  # Agent Router exposure of the A2A server (a2a-route.yaml): host path
   # /api/a2a/returns-processing rewritten to /, so the card stays reachable at
   # /api/a2a/returns-processing/.well-known/agent-card.json. Off by default;
   # warehouse-infra turns it on with the real parentRefs.
   route:
     enabled: false
     path: "/api/a2a/returns-processing"
+    # Route timeout (HTTPRoute rule timeouts.request). "0s" disables it: Envoy's 15s
+    # default would cut long A2A calls and streamed (SSE) responses.
+    timeouts:
+      request: "0s"
     parentRefs:
       - name: ""
         namespace: ""

@@ -8,7 +8,8 @@ cluster rebuild (local-exec only runs when triggers change) while
 chart-rendered objects are Helm/ArgoCD-reconciled forever.
 
 This test is the sensor for that decision. It fails if:
-  * any enabled HTTPRoute renders WITHOUT the konghq.com/plugins annotation,
+  * any enabled api/reports HTTPRoute renders WITHOUT the konghq.com/plugins annotation
+    (MCP + A2A routes are the Agent Router's and must carry NO Kong annotation),
   * the annotation names KongPlugins the chart does not actually render,
   * any auth/authorization plugin (key-auth, jwt, oidc, acl, basic-auth,
     oauth2, ...) is ever configured — forbidden fleet-wide,
@@ -63,12 +64,12 @@ ENABLE_KONG = MANDATORY + [
     "--set", "kongPlugins.opentelemetry.enabled=true",
     "--set", "mcp.enabled=true",
     "--set", "mcp.route.enabled=true",
-    "--set", "mcp.route.parentRefs[0].name=warehouse-gateway",
-    "--set", "mcp.route.parentRefs[0].namespace=kong",
+    "--set", "mcp.route.parentRefs[0].name=agent-router",
+    "--set", "mcp.route.parentRefs[0].namespace=envoy-gateway-system",
     "--set", "a2a.enabled=true",
     "--set", "a2a.route.enabled=true",
-    "--set", "a2a.route.parentRefs[0].name=warehouse-gateway",
-    "--set", "a2a.route.parentRefs[0].namespace=kong",
+    "--set", "a2a.route.parentRefs[0].name=agent-router",
+    "--set", "a2a.route.parentRefs[0].namespace=envoy-gateway-system",
 ]
 
 
@@ -93,7 +94,15 @@ def check_routes(routes: list[dict], plugins: dict[str, dict], failures: list[st
     for r in routes:
         name = r["metadata"]["name"]
         ann = (r.get("metadata", {}).get("annotations") or {}).get("konghq.com/plugins")
-        if not ann:
+        if name.endswith(("-a2a", "-mcp")):
+            # MCP + A2A are exposed by the Agent Router (Envoy Gateway), not Kong
+            # (warehouse-infra ADR 0014 / 0015): no Kong annotation, not on the Kong Gateway.
+            if any(k.startswith("konghq.com/") for k in (r.get("metadata", {}).get("annotations") or {})):
+                failures.append(f"HTTPRoute {name} carries a konghq.com/* annotation; MCP/A2A routes belong to the Agent Router, not Kong")
+            for ref in r.get("spec", {}).get("parentRefs", []):
+                if ref.get("name") == "warehouse-gateway" or ref.get("namespace") == "kong":
+                    failures.append(f"HTTPRoute {name} attaches to the Kong Gateway ({ref.get('name')}/{ref.get('namespace')}); use the agent-router Gateway")
+        elif not ann:
             failures.append(f"HTTPRoute {name} has no konghq.com/plugins annotation")
         else:
             for plugin in ann.split(","):
